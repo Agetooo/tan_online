@@ -97,13 +97,9 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
     };
 
     socket.on('voice-signal', handleVoiceSignal);
-    socket.on('voice-peer-joined', handleVoicePeerJoined);
-    socket.on('voice-peer-left', handleVoicePeerLeft);
 
     return () => {
       socket.off('voice-signal', handleVoiceSignal);
-      socket.off('voice-peer-joined', handleVoicePeerJoined);
-      socket.off('voice-peer-left', handleVoicePeerLeft);
       
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
@@ -114,7 +110,24 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
     };
   }, [socket, roomState?.id]);
 
-  const initiatePeerConnection = async (peerId, stream) => {
+  // Autoconnect to all other active human players regardless of microphone state
+  useEffect(() => {
+    if (!socket || !localPlayerId) return;
+
+    roomState.players.forEach(p => {
+      if (p.id !== localPlayerId && !p.isBot && p.isOnline) {
+        if (!peerConnections.current[p.id]) {
+          initiatePeerConnection(p.id, localStreamRef.current);
+        }
+      } else {
+        if (peerConnections.current[p.id]) {
+          cleanupPeer(p.id);
+        }
+      }
+    });
+  }, [roomState.players, socket, localPlayerId]);
+
+  const initiatePeerConnection = async (peerId, stream = null) => {
     if (peerConnections.current[peerId]) return;
 
     const pc = new RTCPeerConnection({
@@ -125,7 +138,12 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
     });
     peerConnections.current[peerId] = pc;
 
-    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+    if (stream) {
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+    } else {
+      // Negotiate receiving audio even when our microphone is muted/off
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+    }
 
     pc.onicecandidate = event => {
       if (event.candidate) {
@@ -185,8 +203,10 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
       setIsMicOn(false);
       socket.emit('voice-leave', { roomId: roomState.id });
       
+      // Remove local tracks from all connections
       Object.keys(peerConnections.current).forEach(peerId => {
-        cleanupPeer(peerId);
+        const pc = peerConnections.current[peerId];
+        pc.getSenders().forEach(sender => pc.removeTrack(sender));
       });
     } else {
       try {
@@ -195,13 +215,23 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
         setIsMicOn(true);
         socket.emit('voice-join', { roomId: roomState.id });
 
-        roomState.players.forEach(p => {
-          if (p.id !== localPlayerId && p.voiceActive && !p.isBot) {
-            initiatePeerConnection(p.id, stream);
-          }
+        // Add tracks and renegotiate with all active peers
+        Object.keys(peerConnections.current).forEach(peerId => {
+          const pc = peerConnections.current[peerId];
+          stream.getTracks().forEach(track => pc.addTrack(track, stream));
+          pc.createOffer()
+            .then(offer => pc.setLocalDescription(offer))
+            .then(() => {
+              socket.emit('voice-signal', {
+                roomId: roomState.id,
+                targetId: peerId,
+                signal: { type: 'offer', sdp: pc.localDescription }
+              });
+            });
         });
       } catch (err) {
         alert('Không thể truy cập Microphone của bạn. Vui lòng cấp quyền micro trong cài đặt trình duyệt.');
+        setIsMicOn(false);
         console.error('Mic access error:', err);
       }
     }
@@ -487,8 +517,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
       <div className="game-header">
         <div className="game-title-info" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontWeight: 800, color: 'var(--gold)' }}>Bài Tấn</span>
-            <span style={{ fontSize: '12px', background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '6px' }}>
+            <span style={{ fontSize: '12px', background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>
               Phòng: {roomState.id}
             </span>
           </div>
@@ -508,52 +537,64 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
           <button 
             className="btn-mic" 
             onClick={toggleMic}
+            title={isMicOn ? 'Tắt Microphone' : 'Bật Microphone'}
             style={{
               background: isMicOn ? 'linear-gradient(135deg, #2ecc71 0%, #27ae60 100%)' : 'linear-gradient(135deg, #7f8c8d 0%, #34495e 100%)',
               color: '#fff',
               border: 'none',
-              padding: '6px 12px',
-              borderRadius: '6px',
-              fontSize: '11px',
-              fontWeight: '600',
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              fontSize: '14px',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '4px',
+              justifyContent: 'center',
               boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-              transition: 'all 0.2s ease'
+              transition: 'all 0.2s ease',
+              padding: 0
             }}
           >
-            {isMicOn ? '🎙️ Mic: Bật' : '🔇 Mic: Tắt'}
+            {isMicOn ? '🎙️' : '🔇'}
           </button>
           
           <button 
             className="btn-speaker" 
             onClick={() => setIsSpeakerOn(prev => !prev)}
+            title={isSpeakerOn ? 'Tắt Loa' : 'Bật Loa'}
             style={{
               background: isSpeakerOn ? 'linear-gradient(135deg, #3498db 0%, #2980b9 100%)' : 'linear-gradient(135deg, #7f8c8d 0%, #34495e 100%)',
               color: '#fff',
               border: 'none',
-              padding: '6px 12px',
-              borderRadius: '6px',
-              fontSize: '11px',
-              fontWeight: '600',
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              fontSize: '14px',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '4px',
+              justifyContent: 'center',
               boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-              transition: 'all 0.2s ease'
+              transition: 'all 0.2s ease',
+              padding: 0
             }}
           >
-            {isSpeakerOn ? '🔊 Loa: Bật' : '🔇 Loa: Tắt'}
+            {isSpeakerOn ? '🔊' : '🔇'}
           </button>
 
-          <button className="btn-exit" onClick={onLeaveRoom}>
+          <button 
+            className="btn-exit" 
+            onClick={onLeaveRoom}
+            style={{
+              fontSize: '11px',
+              padding: '6px 10px',
+              marginLeft: '4px'
+            }}
+          >
             Rời bàn
           </button>
         </div>
@@ -674,6 +715,17 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
             <span style={{ fontWeight: 700, fontSize: '14px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
               Bài của bạn
               {localPlayer.voiceActive && <span style={{ color: '#2ecc71', fontSize: '12px' }}>🎙️</span>}
+              {localPlayer.id === roomState.defenderId && roomState.defenderWantsToTake && localTimer > 0 && (
+                <svg style={{ width: '16px', height: '16px', marginLeft: '4px' }} viewBox="0 0 50 50">
+                  <circle cx="25" cy="25" r="23" stroke="rgba(255,255,255,0.15)" strokeWidth="4.5" fill="none" />
+                  <circle cx="25" cy="25" r="23" stroke="#2ecc71" strokeWidth="4.5" fill="none"
+                    strokeDasharray="144"
+                    strokeDashoffset={144 - (144 * localTimer) / 10}
+                    strokeLinecap="round"
+                    transform="rotate(-90 25 25)"
+                  />
+                </svg>
+              )}
             </span>
             <div className="player-status-badge">
               {roomState.passedPlayers.includes(localPlayerId) ? (
