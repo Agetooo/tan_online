@@ -6,6 +6,122 @@ import './Card.css';
 export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, onPass, onTakeCards, onShiftDefense, onTransferAttack, onLeaveRoom, onStartGame }) {
   const [selectedCardIds, setSelectedCardIds] = useState([]);
   const [selectedTablePairId, setSelectedTablePairId] = useState(null);
+  const [localTimer, setLocalTimer] = useState(0);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
+  const [isMicOn, setIsMicOn] = useState(false);
+
+  const peerConnections = useRef({});
+  const localStreamRef = useRef(null);
+
+  // Helper functions defined at the top to avoid TDZ errors
+  const playRemoteAudio = (peerId, stream) => {
+    let audio = document.getElementById(`audio-peer-${peerId}`);
+    if (!audio) {
+      audio = document.createElement('audio');
+      audio.id = `audio-peer-${peerId}`;
+      audio.autoplay = true;
+      audio.style.display = 'none';
+      document.body.appendChild(audio);
+    }
+    audio.srcObject = stream;
+    audio.muted = !isSpeakerOn;
+  };
+
+  const cleanupPeer = (peerId) => {
+    if (peerConnections.current[peerId]) {
+      peerConnections.current[peerId].close();
+      delete peerConnections.current[peerId];
+    }
+    const audio = document.getElementById(`audio-peer-${peerId}`);
+    if (audio) audio.remove();
+  };
+
+  const initiatePeerConnection = async (peerId, stream = null) => {
+    if (peerConnections.current[peerId]) return;
+
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    });
+    peerConnections.current[peerId] = pc;
+
+    if (stream) {
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+    } else {
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+    }
+
+    pc.onicecandidate = event => {
+      if (event.candidate) {
+        socket.emit('voice-signal', {
+          roomId: roomState.id,
+          targetId: peerId,
+          signal: { type: 'candidate', candidate: event.candidate }
+        });
+      }
+    };
+
+    pc.ontrack = event => {
+      playRemoteAudio(peerId, event.streams[0]);
+    };
+
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('voice-signal', {
+        roomId: roomState.id,
+        targetId: peerId,
+        signal: { type: 'offer', sdp: pc.localDescription }
+      });
+    } catch (err) {
+      console.error('Error creating WebRTC offer:', err);
+    }
+  };
+
+  const toggleMic = async () => {
+    if (isMicOn) {
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+      }
+      setIsMicOn(false);
+      socket.emit('voice-leave', { roomId: roomState.id });
+      
+      // Remove local tracks from all connections
+      Object.keys(peerConnections.current).forEach(peerId => {
+        const pc = peerConnections.current[peerId];
+        pc.getSenders().forEach(sender => pc.removeTrack(sender));
+      });
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        localStreamRef.current = stream;
+        setIsMicOn(true);
+        socket.emit('voice-join', { roomId: roomState.id });
+
+        // Add tracks and renegotiate with all active peers
+        Object.keys(peerConnections.current).forEach(peerId => {
+          const pc = peerConnections.current[peerId];
+          stream.getTracks().forEach(track => pc.addTrack(track, stream));
+          pc.createOffer()
+            .then(offer => pc.setLocalDescription(offer))
+            .then(() => {
+              socket.emit('voice-signal', {
+                roomId: roomState.id,
+                targetId: peerId,
+                signal: { type: 'offer', sdp: pc.localDescription }
+              });
+            });
+        });
+      } catch (err) {
+        alert('Không thể truy cập Microphone của bạn. Vui lòng cấp quyền micro trong cài đặt trình duyệt.');
+        setIsMicOn(false);
+        console.error('Mic access error:', err);
+      }
+    }
+  };
 
   // Reset selected card if hand changes
   const localPlayer = roomState.players.find(p => p.hand !== undefined);
@@ -19,10 +135,6 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
     setSelectedCardIds([]);
     setSelectedTablePairId(null);
   }, [hand.length, roomState.tablePairs.length]);
-
-  const peerConnections = useRef({});
-  const localStreamRef = useRef(null);
-  const [isMicOn, setIsMicOn] = useState(false);
 
   useEffect(() => {
     if (!socket) return;
@@ -86,16 +198,6 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
       }
     };
 
-    const handleVoicePeerJoined = ({ peerId }) => {
-      if (localStreamRef.current) {
-        initiatePeerConnection(peerId, localStreamRef.current);
-      }
-    };
-
-    const handleVoicePeerLeft = ({ peerId }) => {
-      cleanupPeer(peerId);
-    };
-
     socket.on('voice-signal', handleVoiceSignal);
 
     return () => {
@@ -127,119 +229,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
     });
   }, [roomState.players, socket, localPlayerId]);
 
-  const initiatePeerConnection = async (peerId, stream = null) => {
-    if (peerConnections.current[peerId]) return;
-
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
-    });
-    peerConnections.current[peerId] = pc;
-
-    if (stream) {
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
-    } else {
-      // Negotiate receiving audio even when our microphone is muted/off
-      pc.addTransceiver('audio', { direction: 'recvonly' });
-    }
-
-    pc.onicecandidate = event => {
-      if (event.candidate) {
-        socket.emit('voice-signal', {
-          roomId: roomState.id,
-          targetId: peerId,
-          signal: { type: 'candidate', candidate: event.candidate }
-        });
-      }
-    };
-
-    pc.ontrack = event => {
-      playRemoteAudio(peerId, event.streams[0]);
-    };
-
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socket.emit('voice-signal', {
-        roomId: roomState.id,
-        targetId: peerId,
-        signal: { type: 'offer', sdp: pc.localDescription }
-      });
-    } catch (err) {
-      console.error('Error creating WebRTC offer:', err);
-    }
-  };
-
-  const playRemoteAudio = (peerId, stream) => {
-    let audio = document.getElementById(`audio-peer-${peerId}`);
-    if (!audio) {
-      audio = document.createElement('audio');
-      audio.id = `audio-peer-${peerId}`;
-      audio.autoplay = true;
-      audio.style.display = 'none';
-      document.body.appendChild(audio);
-    }
-    audio.srcObject = stream;
-    audio.muted = !isSpeakerOn;
-  };
-
-  const cleanupPeer = (peerId) => {
-    if (peerConnections.current[peerId]) {
-      peerConnections.current[peerId].close();
-      delete peerConnections.current[peerId];
-    }
-    const audio = document.getElementById(`audio-peer-${peerId}`);
-    if (audio) audio.remove();
-  };
-
-  const toggleMic = async () => {
-    if (isMicOn) {
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
-        localStreamRef.current = null;
-      }
-      setIsMicOn(false);
-      socket.emit('voice-leave', { roomId: roomState.id });
-      
-      // Remove local tracks from all connections
-      Object.keys(peerConnections.current).forEach(peerId => {
-        const pc = peerConnections.current[peerId];
-        pc.getSenders().forEach(sender => pc.removeTrack(sender));
-      });
-    } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        localStreamRef.current = stream;
-        setIsMicOn(true);
-        socket.emit('voice-join', { roomId: roomState.id });
-
-        // Add tracks and renegotiate with all active peers
-        Object.keys(peerConnections.current).forEach(peerId => {
-          const pc = peerConnections.current[peerId];
-          stream.getTracks().forEach(track => pc.addTrack(track, stream));
-          pc.createOffer()
-            .then(offer => pc.setLocalDescription(offer))
-            .then(() => {
-              socket.emit('voice-signal', {
-                roomId: roomState.id,
-                targetId: peerId,
-                signal: { type: 'offer', sdp: pc.localDescription }
-              });
-            });
-        });
-      } catch (err) {
-        alert('Không thể truy cập Microphone của bạn. Vui lòng cấp quyền micro trong cài đặt trình duyệt.');
-        setIsMicOn(false);
-        console.error('Mic access error:', err);
-      }
-    }
-  };
-
   const [timerSec, setTimerSec] = useState(null);
-  const [localTimer, setLocalTimer] = useState(0);
-  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
 
   useEffect(() => {
     if (!roomState.defenderWantsToTake || !roomState.takeTimerRemaining) {

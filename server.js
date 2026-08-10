@@ -113,6 +113,17 @@ function determineFirstAttacker(room) {
     }
   }
 
+  // If very first game of the room (no previous winner exists yet in this room),
+  // randomize who attacks first (satisfies request: random ng bat dau tan, khong mac dinh chu phong)
+  if (!room.lastWinnerId) {
+    const activePlayers = room.players.filter(p => p.status !== 'win' && p.status !== 'out');
+    if (activePlayers.length > 0) {
+      const randomPlayer = activePlayers[Math.floor(Math.random() * activePlayers.length)];
+      logGame(room, `🎲 Ván đầu tiên: Chọn ngẫu nhiên ${randomPlayer.name} tấn đầu.`);
+      return randomPlayer;
+    }
+  }
+
   // Check if we have a winner from the previous game who is still active in this game
   if (room.lastWinnerId) {
     const prevWinner = room.players.find(p => p.id === room.lastWinnerId);
@@ -134,7 +145,7 @@ function determineFirstAttacker(room) {
     });
   });
 
-  // If no one has a trump card, the host starts
+  // Fallback
   if (!firstAttacker) {
     firstAttacker = room.players.find(p => p.isHost && p.status !== 'win') || room.players[0];
   }
@@ -937,7 +948,7 @@ io.on('connection', (socket) => {
       room.trumpCard = playerTwoCard;
       room.twoOfTrumpStarterId = swapPlayer.id;
 
-      logGame(room, `🔄 ${swapPlayer.name} sở hữu 2 Trưởng, tự động đổi lấy quân lật ${deckTrumpCard.rank} ${deckTrumpCard.suit} và giành quyền tấn đầu.`);
+      logGame(room, `📣 Do ${swapPlayer.name} sở hữu 2 Trưởng nên được tự động đổi lấy quân lật ${deckTrumpCard.rank} ${deckTrumpCard.suit} và giành quyền tấn đầu tiên!`);
     }
 
     logGame(room, `🃏 Bắt đầu chơi! Chất trưởng là: ${room.trumpSuit.toUpperCase()} (${trumpCard.rank} ${trumpCard.suit}).`);
