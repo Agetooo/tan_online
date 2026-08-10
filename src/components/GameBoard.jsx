@@ -3,8 +3,8 @@ import { canAttack, canDefend, SUIT_LABELS, SUIT_NAMES } from '../gameLogic';
 import './GameBoard.css';
 import './Card.css';
 
-export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTakeCards, onShiftDefense, onTransferAttack, onLeaveRoom, onStartGame }) {
-  const [selectedCardId, setSelectedCardId] = useState(null);
+export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, onPass, onTakeCards, onShiftDefense, onTransferAttack, onLeaveRoom, onStartGame }) {
+  const [selectedCardIds, setSelectedCardIds] = useState([]);
   const [selectedTablePairId, setSelectedTablePairId] = useState(null);
 
   // Reset selected card if hand changes
@@ -16,7 +16,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
   const isMyTurn = isDefender || isAttacker || (roomState.tablePairs.length > 0 && localPlayer?.status !== 'win');
 
   useEffect(() => {
-    setSelectedCardId(null);
+    setSelectedCardIds([]);
     setSelectedTablePairId(null);
   }, [hand.length, roomState.tablePairs.length]);
 
@@ -164,6 +164,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
       document.body.appendChild(audio);
     }
     audio.srcObject = stream;
+    audio.muted = !isSpeakerOn;
   };
 
   const cleanupPeer = (peerId) => {
@@ -207,20 +208,33 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
   };
 
   const [timerSec, setTimerSec] = useState(null);
+  const [localTimer, setLocalTimer] = useState(0);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
 
   useEffect(() => {
-    if (!roomState.defenderWantsToTake || !roomState.takeTimerExpiresAt) {
-      setTimerSec(null);
+    if (!roomState.defenderWantsToTake || !roomState.takeTimerRemaining) {
+      setLocalTimer(0);
       return;
     }
 
+    setLocalTimer(roomState.takeTimerRemaining);
+
     const interval = setInterval(() => {
-      const remaining = Math.max(0, Math.ceil((roomState.takeTimerExpiresAt - Date.now()) / 1000));
-      setTimerSec(remaining);
-    }, 200);
+      setLocalTimer(prev => Math.max(0, prev - 1));
+    }, 1000);
 
     return () => clearInterval(interval);
-  }, [roomState.defenderWantsToTake, roomState.takeTimerExpiresAt]);
+  }, [roomState.defenderWantsToTake, roomState.takeTimerRemaining]);
+
+  useEffect(() => {
+    // Update mute state on all active peer audio elements
+    roomState.players.forEach(p => {
+      const audio = document.getElementById(`audio-peer-${p.id}`);
+      if (audio) {
+        audio.muted = !isSpeakerOn;
+      }
+    });
+  }, [isSpeakerOn, roomState.players]);
 
   if (!localPlayer) return null;
 
@@ -268,10 +282,30 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
     if (roomState.status !== 'playing') return;
 
     setSelectedTablePairId(null); // Clear table selection
-    if (selectedCardId === card.id) {
-      setSelectedCardId(null);
+    
+    if (isDefender) {
+      // Defender can only select one card to defend at a time
+      if (selectedCardIds.includes(card.id)) {
+        setSelectedCardIds([]);
+      } else {
+        setSelectedCardIds([card.id]);
+      }
     } else {
-      setSelectedCardId(card.id);
+      // Attackers can select multiple cards of matching rank
+      if (selectedCardIds.includes(card.id)) {
+        setSelectedCardIds(prev => prev.filter(id => id !== card.id));
+      } else {
+        if (selectedCardIds.length === 0) {
+          setSelectedCardIds([card.id]);
+        } else {
+          const selectedCards = hand.filter(c => selectedCardIds.includes(c.id));
+          if (selectedCards.length > 0 && selectedCards[0].rank === card.rank) {
+            setSelectedCardIds(prev => [...prev, card.id]);
+          } else {
+            setSelectedCardIds([card.id]);
+          }
+        }
+      }
     }
   };
 
@@ -297,10 +331,13 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
         onShiftDefense(selectedTablePairId, pair.id);
         setSelectedTablePairId(null);
       }
-    } else if (selectedCardId) {
+    } else if (selectedCardIds.length > 0) {
       // Play a card from hand to defend
-      onPlayCard(selectedCardId, pair.id);
-      setSelectedCardId(null);
+      const defenseCard = hand.find(c => selectedCardIds.includes(c.id));
+      if (defenseCard) {
+        onPlayCard(defenseCard.id, pair.id);
+        setSelectedCardIds([]);
+      }
     }
   };
 
@@ -349,7 +386,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
   const getSuitSymbol = (suit) => SUIT_LABELS[suit] || '';
   const getSuitClass = (suit) => (suit === 'hearts' || suit === 'diamonds') ? 'red-suit' : 'black-suit';
 
-  const selectedCard = hand.find(c => c.id === selectedCardId);
+  const selectedCard = hand.find(c => selectedCardIds.includes(c.id));
 
   // Render player indicator node
   const renderPlayerSlot = (player, slotClass) => {
@@ -358,9 +395,25 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
     const isOnline = player.isOnline;
     const hasPassed = roomState.passedPlayers.includes(player.id);
     
+    // Circular SVG Progress Ring (Timer) around avatar
+    const showProgressRing = player.id === roomState.defenderId && roomState.defenderWantsToTake && localTimer > 0;
+    const strokeDashoffset = 144 - (144 * localTimer) / 10;
+    
     return (
       <div className={`opponent-slot ${slotClass} ${isTurn ? 'active-turn' : ''}`} key={player.id}>
         <div className="opponent-avatar-wrapper">
+          {showProgressRing && (
+            <svg className="avatar-timer-svg" viewBox="0 0 50 50">
+              <circle cx="25" cy="25" r="23" stroke="rgba(255,255,255,0.15)" strokeWidth="3.5" fill="none" />
+              <circle cx="25" cy="25" r="23" stroke="#2ecc71" strokeWidth="3.5" fill="none"
+                strokeDasharray="144"
+                strokeDashoffset={strokeDashoffset}
+                strokeLinecap="round"
+                transform="rotate(-90 25 25)"
+                style={{ transition: 'stroke-dashoffset 1s linear' }}
+              />
+            </svg>
+          )}
           <span className="opponent-avatar">{player.isBot ? '🤖' : '👤'}</span>
           {!isOnline && <span style={{ position: 'absolute', top: 0, right: 0, fontSize: '8px', background: '#c0392b', color: '#fff', padding: '1px 3px', borderRadius: '4px' }}>OFF</span>}
           {hasPassed ? (
@@ -408,7 +461,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
     return (
     <div className="game-board">
       {/* Countdown timer alert for 3s or less */}
-      {timerSec !== null && timerSec <= 3 && timerSec > 0 && (
+      {localTimer > 0 && localTimer <= 3 && (
         <div className="timer-alert-overlay" style={{
           position: 'absolute',
           top: '30%',
@@ -426,7 +479,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
           textAlign: 'center',
           animation: 'pulse-timer 0.5s infinite alternate'
         }}>
-          ⚠️ Sắp hết giờ tấn thêm! Còn {timerSec} giây...
+          ⚠️ Sắp hết giờ tấn thêm! Còn {localTimer} giây...
         </div>
       )}
 
@@ -477,6 +530,29 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
           >
             {isMicOn ? '🎙️ Mic: Bật' : '🔇 Mic: Tắt'}
           </button>
+          
+          <button 
+            className="btn-speaker" 
+            onClick={() => setIsSpeakerOn(prev => !prev)}
+            style={{
+              background: isSpeakerOn ? 'linear-gradient(135deg, #3498db 0%, #2980b9 100%)' : 'linear-gradient(135deg, #7f8c8d 0%, #34495e 100%)',
+              color: '#fff',
+              border: 'none',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {isSpeakerOn ? '🔊 Loa: Bật' : '🔇 Loa: Tắt'}
+          </button>
+
           <button className="btn-exit" onClick={onLeaveRoom}>
             Rời bàn
           </button>
@@ -624,10 +700,10 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
               <div className="fanned-hand">
                 {hand.map((card, index) => {
                   const isPlayable = isDefender
-                    ? (selectedCardId === card.id)
+                    ? (selectedCardIds.includes(card.id))
                     : canAttack(card, roomState.tablePairs, roomState.tablePairs.length === 0 && isAttacker);
                   
-                  const isSelected = selectedCardId === card.id;
+                  const isSelected = selectedCardIds.includes(card.id);
 
                   return (
                     <div
@@ -663,33 +739,34 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
           {roomState.status === 'playing' && localPlayer.status !== 'win' && (
             <div className="player-actions-row">
               {/* Play / Defend confirm button */}
-              {selectedCardId && (
+              {selectedCardIds.length > 0 && (
                 isDefender ? (
                   <>
                     {(() => {
-                      const selectedCard = hand.find(c => c.id === selectedCardId);
+                      const selectedCard = hand.find(c => selectedCardIds.includes(c.id));
                       // Find first undefended pair that this card can beat
-                      const targetPair = roomState.tablePairs.find(p => !p.defense && canDefend(p.attack, selectedCard, roomState.trumpSuit));
+                      const targetPair = roomState.tablePairs.find(p => !p.defense && selectedCard && canDefend(p.attack, selectedCard, roomState.trumpSuit));
                       return (
                         <button
                           className="btn-gold player-action-btn"
                           onClick={() => {
-                            if (targetPair) {
-                              onPlayCard(selectedCardId, targetPair.id);
-                              setSelectedCardId(null);
+                            if (selectedCard && targetPair) {
+                              onPlayCard(selectedCard.id, targetPair.id);
+                              setSelectedCardIds([]);
                             }
                           }}
                           disabled={!targetPair}
                           style={{ background: 'linear-gradient(135deg, #2ecc71 0%, #27ae60 100%)', color: '#fff', boxShadow: '0 4px 15px rgba(46, 204, 113, 0.3)' }}
                         >
-                          ⚡ Đỡ bài
+                          🛡️ Chặn bài
                         </button>
                       );
                     })()}
 
                     {(() => {
-                      const selectedCard = hand.find(c => c.id === selectedCardId);
-                      const canTransfer = roomState.tablePairs.length > 0 && 
+                      const selectedCard = hand.find(c => selectedCardIds.includes(c.id));
+                      const canTransfer = selectedCard &&
+                                           roomState.tablePairs.length > 0 && 
                                            roomState.tablePairs.every(p => !p.defense) && 
                                            roomState.tablePairs.every(p => p.attack.rank === selectedCard.rank);
                       if (!canTransfer) return null;
@@ -697,8 +774,10 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
                         <button
                           className="btn-gold player-action-btn"
                           onClick={() => {
-                            onTransferAttack(selectedCardId);
-                            setSelectedCardId(null);
+                            if (selectedCard) {
+                              onTransferAttack(selectedCard.id);
+                              setSelectedCardIds([]);
+                            }
                           }}
                           style={{ background: 'linear-gradient(135deg, #3498db 0%, #2980b9 100%)', color: '#fff', boxShadow: '0 4px 15px rgba(52, 152, 219, 0.3)' }}
                         >
@@ -709,22 +788,27 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
                   </>
                 ) : (
                   (() => {
-                    const selectedCard = hand.find(c => c.id === selectedCardId);
                     const isInitial = roomState.tablePairs.length === 0;
-                    const isValidAttack = selectedCard && canAttack(selectedCard, roomState.tablePairs, isInitial && isAttacker);
+                    const selectedCards = hand.filter(c => selectedCardIds.includes(c.id));
+                    const hasSelected = selectedCards.length > 0;
+                    const isValidAttack = hasSelected && selectedCards.every(c => canAttack(c, roomState.tablePairs, isInitial && isAttacker));
                     return (
                       <button
                         className="btn-gold player-action-btn"
                         onClick={() => {
                           if (isValidAttack) {
-                            onPlayCard(selectedCardId, null);
-                            setSelectedCardId(null);
+                            if (selectedCards.length > 1) {
+                              onPlayCards(selectedCardIds);
+                            } else {
+                              onPlayCard(selectedCardIds[0], null);
+                            }
+                            setSelectedCardIds([]);
                           }
                         }}
                         disabled={!isValidAttack}
                         style={{ background: 'linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)', color: '#fff', boxShadow: '0 4px 15px rgba(231, 76, 60, 0.3)' }}
                       >
-                        ⚔️ Tấn bài
+                        {selectedCards.length > 1 ? `⚔️ Tấn ${selectedCards.length} lá` : '⚔️ Tấn bài'}
                       </button>
                     );
                   })()

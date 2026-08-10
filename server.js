@@ -73,7 +73,7 @@ function getCleanRoomState(room, requestSocketId) {
     defenderWantsToTake: room.defenderWantsToTake,
     winners: room.winners || [],
     lastWinners: room.lastWinners || [],
-    takeTimerExpiresAt: room.takeTimerExpiresAt || null
+    takeTimerRemaining: room.takeTimerExpiresAt ? Math.max(0, Math.ceil((room.takeTimerExpiresAt - Date.now()) / 1000)) : null
   };
 }
 
@@ -394,6 +394,9 @@ function handleBotDecision(room, bot) {
       room.passedPlayers = []; // Reset passes since state changed
 
       logGame(room, `🛡️ Bot ${bot.name} đỡ lá ${attackCard.rank} ${attackCard.suit} bằng ${chosenCard.rank} ${chosenCard.suit}`);
+      if (bot.hand.length === 0 && room.deck.length === 0) {
+        logGame(room, `📣 Bot ${bot.name} đã hết bài! Các người chơi khác có 10 giây để chạy bài (theo bài)...`);
+      }
       broadcastRoomState(room);
       checkRoundResolution(room);
 
@@ -433,6 +436,9 @@ function handleBotDecision(room, bot) {
         room.passedPlayers = [];
 
         logGame(room, `⚔️ Bot ${bot.name} tấn công đầu bằng ${chosenCard.rank} ${chosenCard.suit}`);
+        if (bot.hand.length === 0 && room.deck.length === 0) {
+          logGame(room, `📣 Bot ${bot.name} đã hết bài! Các người chơi khác có 10 giây để chạy bài (theo bài)...`);
+        }
         broadcastRoomState(room);
         checkRoundResolution(room);
 
@@ -481,6 +487,9 @@ function handleBotDecision(room, bot) {
         }
 
         logGame(room, `⚔️ Bot ${bot.name} tấn thêm lá ${chosenCard.rank} ${chosenCard.suit}`);
+        if (bot.hand.length === 0 && room.deck.length === 0) {
+          logGame(room, `📣 Bot ${bot.name} đã hết bài! Các người chơi khác có 10 giây để chạy bài (theo bài)...`);
+        }
         broadcastRoomState(room);
         checkRoundResolution(room);
 
@@ -977,6 +986,9 @@ io.on('connection', (socket) => {
         room.passedPlayers = []; // Reset passes since there is action
 
         logGame(room, `🛡️ ${player.name} đỡ lá ${pair.attack.rank} ${pair.attack.suit} bằng lá ${card.rank} ${card.suit}`);
+        if (player.hand.length === 0 && room.deck.length === 0) {
+          logGame(room, `📣 ${player.name} đã hết bài! Các người chơi khác có 10 giây để chạy bài (theo bài)...`);
+        }
         broadcastRoomState(room);
         checkRoundResolution(room);
 
@@ -1021,6 +1033,9 @@ io.on('connection', (socket) => {
         }
 
         logGame(room, `⚔️ ${player.name} tấn công bằng lá ${card.rank} ${card.suit}`);
+        if (player.hand.length === 0 && room.deck.length === 0) {
+          logGame(room, `📣 ${player.name} đã hết bài! Các người chơi khác có 10 giây để chạy bài (theo bài)...`);
+        }
         broadcastRoomState(room);
         checkRoundResolution(room);
 
@@ -1030,6 +1045,105 @@ io.on('connection', (socket) => {
         socket.emit('error', 'Lá bài tấn phải cùng số (rank) với các lá đang có trên bàn.');
       }
     }
+  });
+
+  // 6.5. Play Multiple Cards (Tấn nhiều lá cùng lúc)
+  socket.on('play-cards', ({ roomId, cardIds }) => {
+    const room = rooms.get(roomId);
+    if (!room || room.status !== 'playing') return;
+
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player) return;
+
+    if (player.status === 'defender') {
+      socket.emit('error', 'Chỉ người tấn mới có thể đánh nhiều lá cùng lúc.');
+      return;
+    }
+
+    if (!Array.isArray(cardIds) || cardIds.length === 0) {
+      socket.emit('error', 'Danh sách quân bài không hợp lệ.');
+      return;
+    }
+
+    // Find cards in player's hand
+    const cards = [];
+    for (const cid of cardIds) {
+      const card = player.hand.find(c => c.id === cid);
+      if (!card) {
+        socket.emit('error', 'Một số quân bài không có trên tay.');
+        return;
+      }
+      cards.push(card);
+    }
+
+    // Check that all played cards share the same rank
+    const firstRank = cards[0].rank;
+    const sameRank = cards.every(c => c.rank === firstRank);
+    if (!sameRank) {
+      socket.emit('error', 'Các lá bài tấn công cùng lúc phải có cùng số (rank).');
+      return;
+    }
+
+    const isInitial = room.tablePairs.length === 0;
+    if (isInitial && player.id !== room.attackerId) {
+      socket.emit('error', 'Đợi người tấn công chính ra lá bài đầu tiên.');
+      return;
+    }
+
+    // Check if these cards can be played as attacks
+    const tableCards = [];
+    room.tablePairs.forEach(p => {
+      if (p.attack) tableCards.push(p.attack);
+      if (p.defense) tableCards.push(p.defense);
+    });
+
+    if (!isInitial) {
+      const tableRanks = tableCards.map(c => c.rank);
+      if (!tableRanks.includes(firstRank)) {
+        socket.emit('error', 'Lá bài tấn phải cùng số (rank) với các lá đang có trên bàn.');
+        return;
+      }
+    }
+
+    // Remove cards from player's hand and push to tablePairs
+    cards.forEach(card => {
+      const idx = player.hand.findIndex(c => c.id === card.id);
+      if (idx !== -1) {
+        player.hand.splice(idx, 1);
+      }
+      room.tablePairs.push({
+        id: `pair_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        attack: card,
+        defense: null
+      });
+    });
+
+    room.passedPlayers = []; // Reset passes since state changed
+
+    // Reset take timer if active
+    if (room.defenderWantsToTake) {
+      room.takeTimerExpiresAt = Date.now() + 10000;
+      if (room.takeTimeoutId) clearTimeout(room.takeTimeoutId);
+      room.takeTimeoutId = setTimeout(() => {
+        const defender = room.players.find(p => p.id === room.defenderId);
+        if (defender && room.defenderWantsToTake) {
+          logGame(room, `⏱️ Hết thời gian tấn thêm, tự động ôm bài.`);
+          executeTakeCards(room, defender);
+          broadcastRoomState(room);
+        }
+      }, 10000);
+    }
+
+    logGame(room, `⚔️ ${player.name} tấn công bằng ${cards.length} lá ${firstRank}`);
+    if (player.hand.length === 0 && room.deck.length === 0) {
+      logGame(room, `📣 ${player.name} đã hết bài! Các người chơi khác có 10 giây để chạy bài (theo bài)...`);
+    }
+
+    broadcastRoomState(room);
+    checkRoundResolution(room);
+
+    // Trigger bot action to respond to the new attacks
+    triggerBotAction(room);
   });
 
   // 7. Pass Turn (For Attackers)

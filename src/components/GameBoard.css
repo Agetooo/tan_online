@@ -436,3 +436,18 @@
     box-shadow: 0 4px 25px rgba(231, 76, 60, 0.8);
   }
 }
+
+/* Avatar Timer Progress Ring Styles */
+.avatar-timer-svg {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.avatar-timer-svg circle {
+  transform-origin: center;
+}

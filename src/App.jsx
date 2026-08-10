@@ -107,10 +107,14 @@ export default function App() {
     sessionStorage.removeItem('tan_room_id');
     window.location.reload();
   };
-
   const handlePlayCard = (cardId, targetPairId) => {
     if (!roomId) return;
     socketRef.current.emit('play-card', { roomId, cardId, targetPairId });
+  };
+
+  const handlePlayCards = (cardIds) => {
+    if (!roomId) return;
+    socketRef.current.emit('play-cards', { roomId, cardIds });
   };
 
   const handlePass = () => {
@@ -132,6 +136,8 @@ export default function App() {
     if (!roomId) return;
     socketRef.current.emit('transfer-attack', { roomId, cardId });
   };
+
+
 
   return (
     <div className="app-container">
@@ -177,6 +183,7 @@ export default function App() {
           socket={socketRef.current}
           roomState={roomState}
           onPlayCard={handlePlayCard}
+          onPlayCards={handlePlayCards}
           onPass={handlePass}
           onTakeCards={handleTakeCards}
           onShiftDefense={handleShiftDefense}
