@@ -72,7 +72,8 @@ function getCleanRoomState(room, requestSocketId) {
     passedPlayers: room.passedPlayers,
     defenderWantsToTake: room.defenderWantsToTake,
     winners: room.winners || [],
-    lastWinners: room.lastWinners || []
+    lastWinners: room.lastWinners || [],
+    takeTimerExpiresAt: room.takeTimerExpiresAt || null
   };
 }
 
@@ -465,6 +466,20 @@ function handleBotDecision(room, bot) {
         });
         room.passedPlayers = [];
 
+        // Reset take timer if active
+        if (room.defenderWantsToTake) {
+          room.takeTimerExpiresAt = Date.now() + 10000;
+          if (room.takeTimeoutId) clearTimeout(room.takeTimeoutId);
+          room.takeTimeoutId = setTimeout(() => {
+            const defender = room.players.find(p => p.id === room.defenderId);
+            if (defender && room.defenderWantsToTake) {
+              logGame(room, `⏱️ Hết thời gian tấn thêm, tự động ôm bài.`);
+              executeTakeCards(room, defender);
+              broadcastRoomState(room);
+            }
+          }, 10000);
+        }
+
         logGame(room, `⚔️ Bot ${bot.name} tấn thêm lá ${chosenCard.rank} ${chosenCard.suit}`);
         broadcastRoomState(room);
         checkRoundResolution(room);
@@ -511,6 +526,11 @@ function executeTakeCards(room, player) {
   player.hand.push(...allTableCards);
   room.tablePairs = [];
   room.defenderWantsToTake = false;
+  room.takeTimerExpiresAt = null;
+  if (room.takeTimeoutId) {
+    clearTimeout(room.takeTimeoutId);
+    room.takeTimeoutId = null;
+  }
 
   // Draw cards for players
   drawCardsForPlayers(room);
@@ -536,6 +556,18 @@ function botTakeCards(room, bot) {
   const unpassed = getUnpassedAttackers(room);
   if (unpassed.length > 0) {
     room.defenderWantsToTake = true;
+    room.takeTimerExpiresAt = Date.now() + 10000;
+
+    if (room.takeTimeoutId) clearTimeout(room.takeTimeoutId);
+    room.takeTimeoutId = setTimeout(() => {
+      const defender = room.players.find(p => p.id === room.defenderId);
+      if (defender && room.defenderWantsToTake) {
+        logGame(room, `⏱️ Hết thời gian tấn thêm, tự động ôm bài.`);
+        executeTakeCards(room, defender);
+        broadcastRoomState(room);
+      }
+    }, 10000);
+
     logGame(room, `✋ Bot ${bot.name} xin ôm bài! Hãy tấn thêm nếu muốn.`);
     broadcastRoomState(room);
     triggerBotAction(room);
@@ -560,23 +592,9 @@ function checkRoundResolution(room) {
         broadcastRoomState(room);
         triggerBotAction(room);
         return;
-      } else {
-        logGame(room, `🎉 ${defender.name} đã hết bài trên tay và hết bài dự phòng! Thắng luôn.`);
-        defender.status = 'win';
-        if (!room.winners) room.winners = [];
-        if (!room.winners.includes(defender.id)) {
-          room.winners.push(defender.id);
-        }
-        if (checkWinConditions(room)) {
-          broadcastRoomState(room);
-          return;
-        }
-        const defenderIdx = room.players.findIndex(p => p.id === defender.id);
-        const nextAttackerIdx = getNextActivePlayerIndex(room, defenderIdx);
-        const nextAttacker = room.players[nextAttackerIdx];
-        startNewRound(room, nextAttacker.id);
-        return;
       }
+      // If deck is empty and defender has 0 cards, we do NOT resolve immediately.
+      // We let the round continue so other players can "theo bài" (chạy bài).
     }
   }
 
@@ -597,6 +615,31 @@ function checkRoundResolution(room) {
 
   const totalAttackers = [...activeAttackers, ...botAttackers];
   const allPassed = totalAttackers.every(p => room.passedPlayers.includes(p.id));
+
+  // Special case: defender runs out of cards and deck is empty (they win!)
+  // We resolve the round when all attackers pass (click Hết cửa), allowing them to "theo bài" (chạy bài) first
+  if (allPassed && room.deck.length === 0 && defender && defender.hand.length === 0) {
+    logGame(room, `🎉 ${defender.name} đã thắng ván đấu do hết bài trên tay và hết nọc!`);
+    defender.status = 'win';
+    if (!room.winners) room.winners = [];
+    if (!room.winners.includes(defender.id)) {
+      room.winners.push(defender.id);
+    }
+    
+    // Draw cards for remaining players
+    drawCardsForPlayers(room);
+    
+    if (checkWinConditions(room)) {
+      broadcastRoomState(room);
+      return;
+    }
+    
+    const defenderIdx = room.players.findIndex(p => p.id === defender.id);
+    const nextAttackerIdx = getNextActivePlayerIndex(room, defenderIdx);
+    const nextAttacker = room.players[nextAttackerIdx];
+    startNewRound(room, nextAttacker.id);
+    return;
+  }
 
   // If defender wants to take cards, we resolve when all attackers passed
   if (room.defenderWantsToTake && allPassed) {
@@ -814,6 +857,11 @@ io.on('connection', (socket) => {
     room.discardPile = [];
     room.tablePairs = [];
     room.winners = [];
+    room.takeTimerExpiresAt = null;
+    if (room.takeTimeoutId) {
+      clearTimeout(room.takeTimeoutId);
+      room.takeTimeoutId = null;
+    }
 
     // Deal 8 cards to each player
     room.players.forEach(p => {
@@ -958,6 +1006,20 @@ io.on('connection', (socket) => {
         room.tablePairs.push(newPair);
         room.passedPlayers = []; // Reset passes since game state changed
 
+        // Reset take timer if active
+        if (room.defenderWantsToTake) {
+          room.takeTimerExpiresAt = Date.now() + 15000;
+          if (room.takeTimeoutId) clearTimeout(room.takeTimeoutId);
+          room.takeTimeoutId = setTimeout(() => {
+            const defender = room.players.find(p => p.id === room.defenderId);
+            if (defender && room.defenderWantsToTake) {
+              logGame(room, `⏱️ Hết thời gian tấn thêm, tự động ôm bài.`);
+              executeTakeCards(room, defender);
+              broadcastRoomState(room);
+            }
+          }, 15000);
+        }
+
         logGame(room, `⚔️ ${player.name} tấn công bằng lá ${card.rank} ${card.suit}`);
         broadcastRoomState(room);
         checkRoundResolution(room);
@@ -1002,6 +1064,19 @@ io.on('connection', (socket) => {
     const unpassed = getUnpassedAttackers(room);
     if (unpassed.length > 0) {
       room.defenderWantsToTake = true;
+      room.takeTimerExpiresAt = Date.now() + 10000;
+
+      // Set server timeout to auto-pass and take after 10s
+      if (room.takeTimeoutId) clearTimeout(room.takeTimeoutId);
+      room.takeTimeoutId = setTimeout(() => {
+        const defender = room.players.find(p => p.id === room.defenderId);
+        if (defender && room.defenderWantsToTake) {
+          logGame(room, `⏱️ Hết thời gian tấn thêm, tự động ôm bài.`);
+          executeTakeCards(room, defender);
+          broadcastRoomState(room);
+        }
+      }, 10000);
+
       logGame(room, `⚠️ ${player.name} xin ôm bài! Hãy tấn thêm nếu muốn.`);
       broadcastRoomState(room);
       triggerBotAction(room);

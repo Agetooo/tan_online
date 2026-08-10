@@ -213,3 +213,48 @@
   font-weight: 700;
   text-transform: uppercase;
 }
+
+/* Card Deal & Draw Animations (GPU Accelerated) */
+@keyframes dealCardBottom {
+  0% {
+    opacity: 0;
+    transform: translateY(-40vh) scale(0.3) rotate(45deg);
+  }
+}
+
+@keyframes dealCardTop {
+  0% {
+    opacity: 0;
+    transform: translateY(40vh) scale(0.3) rotate(-45deg);
+  }
+}
+
+@keyframes dealCardLeft {
+  0% {
+    opacity: 0;
+    transform: translateX(45vw) scale(0.3) rotate(45deg);
+  }
+}
+
+@keyframes dealCardRight {
+  0% {
+    opacity: 0;
+    transform: translateX(-45vw) scale(0.3) rotate(-45deg);
+  }
+}
+
+.deal-anim-bottom {
+  animation: dealCardBottom 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.1);
+}
+
+.deal-anim-top {
+  animation: dealCardTop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.1);
+}
+
+.deal-anim-left {
+  animation: dealCardLeft 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.1);
+}
+
+.deal-anim-right {
+  animation: dealCardRight 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.1);
+}

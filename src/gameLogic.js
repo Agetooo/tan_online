@@ -8,7 +8,7 @@ export const SUIT_LABELS = {
 
 export const SUIT_NAMES = {
   spades: 'Bích',
-  clubs: 'Nhép',
+  clubs: 'Tép',
   diamonds: 'Rô',
   hearts: 'Cơ'
 };

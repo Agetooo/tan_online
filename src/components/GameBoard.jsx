@@ -206,6 +206,22 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
     }
   };
 
+  const [timerSec, setTimerSec] = useState(null);
+
+  useEffect(() => {
+    if (!roomState.defenderWantsToTake || !roomState.takeTimerExpiresAt) {
+      setTimerSec(null);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((roomState.takeTimerExpiresAt - Date.now()) / 1000));
+      setTimerSec(remaining);
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, [roomState.defenderWantsToTake, roomState.takeTimerExpiresAt]);
+
   if (!localPlayer) return null;
 
   // Clockwise player slots assignment
@@ -348,7 +364,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
           <span className="opponent-avatar">{player.isBot ? '🤖' : '👤'}</span>
           {!isOnline && <span style={{ position: 'absolute', top: 0, right: 0, fontSize: '8px', background: '#c0392b', color: '#fff', padding: '1px 3px', borderRadius: '4px' }}>OFF</span>}
           {hasPassed ? (
-            <span className="opponent-badge action-badge badge-passed" style={{ background: '#7f8c8d', color: '#fff', fontSize: '9px' }}>👌 Hết</span>
+            <span className="opponent-badge action-badge badge-passed" style={{ background: '#7f8c8d', color: '#fff', fontSize: '9px' }}>👌 Thôi</span>
           ) : (
             <>
               {player.status === 'win' && <span className="opponent-badge action-badge badge-win">Thắng</span>}
@@ -369,9 +385,16 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
           </div>
           {player.status !== 'win' && (
             <div className="opponent-cards-count">
-              {Array.from({ length: player.handSize }).map((_, i) => (
-                <div className="opponent-card-mini" key={i}></div>
-              ))}
+              {Array.from({ length: player.handSize }).map((_, i) => {
+                const animClass = slotClass.includes('left') ? 'deal-anim-left' : slotClass.includes('right') ? 'deal-anim-right' : 'deal-anim-top';
+                return (
+                  <div 
+                    key={i} 
+                    className={`opponent-card-mini ${animClass}`} 
+                    style={{ animationDelay: `${i * 60}ms` }}
+                  />
+                );
+              })}
               <span style={{ fontSize: '10px', color: 'var(--text-secondary)', marginLeft: '4px', fontWeight: 700 }}>
                 {player.handSize} lá
               </span>
@@ -382,8 +405,31 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
     );
   };
 
-  return (
+    return (
     <div className="game-board">
+      {/* Countdown timer alert for 3s or less */}
+      {timerSec !== null && timerSec <= 3 && timerSec > 0 && (
+        <div className="timer-alert-overlay" style={{
+          position: 'absolute',
+          top: '30%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          background: 'rgba(231, 76, 60, 0.95)',
+          color: '#fff',
+          padding: '12px 24px',
+          borderRadius: '8px',
+          fontSize: '14px',
+          fontWeight: '700',
+          zIndex: 1000,
+          boxShadow: '0 4px 20px rgba(231, 76, 60, 0.5)',
+          border: '2px solid #f1c40f',
+          textAlign: 'center',
+          animation: 'pulse-timer 0.5s infinite alternate'
+        }}>
+          ⚠️ Sắp hết giờ tấn thêm! Còn {timerSec} giây...
+        </div>
+      )}
+
       {/* Header */}
       <div className="game-header">
         <div className="game-title-info" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
@@ -555,7 +601,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
             </span>
             <div className="player-status-badge">
               {roomState.passedPlayers.includes(localPlayerId) ? (
-                <span className="action-badge" style={{ background: '#7f8c8d' }}>👌 Bạn đã Hết cửa</span>
+                <span className="action-badge" style={{ background: '#7f8c8d' }}>👌 Bạn thôi lượt</span>
               ) : (
                 <>
                   {localPlayer.status === 'win' && <span className="action-badge badge-win">Đã Thắng</span>}
@@ -586,8 +632,11 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
                   return (
                     <div
                       key={card.id}
-                      className={`playing-card ${getSuitClass(card.suit)} ${isPlayable ? 'playable' : ''} ${isSelected ? 'selected' : ''}`}
-                      style={getCardStyle(index)}
+                      className={`playing-card ${getSuitClass(card.suit)} ${isPlayable ? 'playable' : ''} ${isSelected ? 'selected' : ''} deal-anim-bottom`}
+                      style={{
+                        ...getCardStyle(index),
+                        animationDelay: `${index * 80}ms`
+                      }}
                       onClick={() => handleHandCardClick(card)}
                     >
                       <div className="card-corner top-left">
@@ -702,7 +751,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTak
                   disabled={roomState.tablePairs.length === 0 || roomState.passedPlayers.includes(localPlayerId)}
                   style={{ background: 'linear-gradient(135deg, #7f8c8d 0%, #2c3e50 100%)', color: '#fff', boxShadow: '0 4px 15px rgba(127, 140, 141, 0.3)' }}
                 >
-                  👌 Hết cửa
+                  👌 Thôi lượt
                 </button>
               )}
             </div>

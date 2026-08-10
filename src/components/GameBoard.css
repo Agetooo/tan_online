@@ -425,3 +425,14 @@
   font-size: 6px;
   bottom: -10px;
 }
+
+@keyframes pulse-timer {
+  0% {
+    transform: translate(-50%, -50%) scale(0.95);
+    box-shadow: 0 4px 10px rgba(231, 76, 60, 0.4);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.05);
+    box-shadow: 0 4px 25px rgba(231, 76, 60, 0.8);
+  }
+}
