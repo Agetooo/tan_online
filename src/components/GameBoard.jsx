@@ -26,6 +26,8 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
       }
       delete remoteAudioNodes.current[peerId];
     }
+    const dummyAudio = document.getElementById(`audio-peer-dummy-${peerId}`);
+    if (dummyAudio) dummyAudio.remove();
     const audio = document.getElementById(`audio-peer-${peerId}`);
     if (audio) audio.remove();
   };
@@ -35,6 +37,16 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
     cleanupPeerAudio(peerId);
 
     try {
+      // Chrome/Safari WebRTC bug workaround: create a dummy muted audio element
+      // to force the browser to stream media packets, making it available for Web Audio source node.
+      const dummyAudio = document.createElement('audio');
+      dummyAudio.id = `audio-peer-dummy-${peerId}`;
+      dummyAudio.srcObject = stream;
+      dummyAudio.autoplay = true;
+      dummyAudio.muted = true;
+      dummyAudio.style.display = 'none';
+      document.body.appendChild(dummyAudio);
+
       const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtxClass) return;
 
