@@ -21,6 +21,8 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
       audio.id = `audio-peer-${peerId}`;
       audio.autoplay = true;
       audio.style.display = 'none';
+      // Set default volume slightly below 1.0 to prevent acoustic feedback coupling on mobile speakers
+      audio.volume = 0.8;
       document.body.appendChild(audio);
     }
     audio.srcObject = stream;
@@ -102,7 +104,12 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
             noiseSuppression: true,
             autoGainControl: true,
             latency: 0,
-            channelCount: 1
+            channelCount: 1,
+            // Enforce aggressive software echo control and high-pass filtering (cuts bass hums)
+            googEchoCancellation: true,
+            googNoiseSuppression: true,
+            googAutoGainControl: true,
+            googHighpassFilter: true
           }
         });
         localStreamRef.current = stream;
