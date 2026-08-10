@@ -1,0 +1,427 @@
+.game-board {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+}
+
+/* Header */
+.game-header {
+  height: 50px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  background: rgba(0, 0, 0, 0.4);
+  border-bottom: 1.5px solid var(--glass-border);
+}
+
+.game-title-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-exit {
+  background: transparent;
+  border: 1px solid rgba(231, 76, 60, 0.4);
+  color: #e74c3c;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-exit:hover {
+  background: #e74c3c;
+  color: #fff;
+}
+
+/* Play Area */
+.play-area {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 10px 6px;
+  overflow: hidden;
+}
+
+/* Opponents placement */
+.opponents-container {
+  position: relative;
+  height: 100px;
+  width: 100%;
+}
+
+.opponent-slot {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 110px;
+  z-index: 10;
+}
+
+.opponent-slot.slot-top {
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.opponent-slot.slot-left {
+  top: 20px;
+  left: 10px;
+}
+
+.opponent-slot.slot-right {
+  top: 20px;
+  right: 10px;
+}
+
+.opponent-avatar-wrapper {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: #14281e;
+  border: 2px solid var(--text-muted);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  transition: all 0.3s ease;
+}
+
+.opponent-slot.active-turn .opponent-avatar-wrapper {
+  border-color: var(--gold);
+  box-shadow: 0 0 15px var(--gold);
+  animation: pulseGold 2s infinite;
+}
+
+.opponent-avatar {
+  font-size: 24px;
+}
+
+.opponent-info {
+  text-align: center;
+  margin-top: 4px;
+  width: 100%;
+}
+
+.opponent-name {
+  font-size: 12px;
+  font-weight: 700;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opponent-cards-count {
+  display: flex;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.opponent-badge {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  white-space: nowrap;
+}
+
+/* Center Table: Deck and Board Pairs */
+.center-table {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  flex: 1;
+  padding: 0 6px;
+  gap: 8px;
+}
+
+/* Stock Deck Pile + Trump suit indicator */
+.deck-pile-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 100%;
+  position: relative;
+}
+
+.trump-suit-indicator {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  gap: 2px;
+}
+
+.trump-suit-icon {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.trump-suit-icon.red-suit {
+  color: var(--crimson);
+}
+.trump-suit-icon.black-suit {
+  color: var(--text-primary);
+}
+
+.trump-card-wrapper {
+  position: relative;
+  width: 70px;
+  height: 100px;
+}
+
+/* Rotate trump card face up, stack deck face down on top of it */
+.trump-card-rotated {
+  position: absolute;
+  top: 5px;
+  left: -5px;
+  transform: rotate(90deg);
+  z-index: 1;
+  transform-origin: center center;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+}
+
+.deck-stack {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+}
+
+.deck-count-badge {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  background: var(--gold);
+  color: #121e18;
+  font-size: 11px;
+  font-weight: 800;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border: 2px solid #fff;
+  z-index: 20;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+
+/* Logs feed */
+.logs-feed-container {
+  height: 60px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  margin: 4px 10px;
+  padding: 6px 12px;
+  overflow-y: auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 3px;
+}
+
+.log-item {
+  line-height: 1.3;
+}
+
+/* Bottom Player Area */
+.player-area-bottom {
+  display: flex;
+  flex-direction: column;
+  background: rgba(18, 30, 24, 0.9);
+  border-top: 1.5px solid var(--glass-border);
+  padding: 10px 6px 16px 6px;
+  z-index: 20;
+}
+
+.player-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 10px 8px 10px;
+}
+
+.player-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.player-actions-row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.player-action-btn {
+  flex: 1;
+  max-width: 140px;
+}
+
+/* Overlay for Game Over */
+.game-over-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+  text-align: center;
+}
+
+.game-over-title {
+  font-size: 32px;
+  color: var(--gold);
+  font-weight: 800;
+  text-shadow: 0 0 20px var(--gold-glow);
+  margin-bottom: 12px;
+}
+
+.game-over-subtitle {
+  color: var(--text-secondary);
+  margin-bottom: 30px;
+  font-size: 16px;
+}
+
+.results-table {
+  width: 100%;
+  max-width: 320px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  border: 1px solid var(--glass-border);
+  overflow: hidden;
+  margin-bottom: 30px;
+}
+
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.result-row:last-child {
+  border-bottom: none;
+}
+
+.result-rank {
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.result-name {
+  font-weight: 600;
+}
+
+.result-status {
+  font-weight: 700;
+  font-size: 12px;
+}
+
+/* Dense table pairs layout when there are > 4 pairs */
+.table-pairs-container.many-pairs {
+  gap: 6px 3px;
+  min-height: 180px;
+}
+
+.table-pairs-container.many-pairs .card-pair {
+  width: 62px;
+  height: 92px;
+}
+
+.table-pairs-container.many-pairs .card-pair .playing-card {
+  width: 58px;
+  height: 84px;
+}
+
+.table-pairs-container.many-pairs .card-pair .card-defense {
+  top: 10px;
+  left: 8px;
+}
+
+.table-pairs-container.many-pairs .card-pair .card-corner {
+  font-size: 11px;
+  padding: 1px;
+}
+
+.table-pairs-container.many-pairs .card-pair .card-corner span:last-child {
+  font-size: 9px;
+}
+
+.table-pairs-container.many-pairs .card-pair .card-center-suit {
+  font-size: 20px;
+}
+
+.table-pairs-container.many-pairs .card-pair.highlight-target::after {
+  font-size: 7px;
+  bottom: -12px;
+}
+
+/* Dense table layout for > 8 pairs */
+.table-pairs-container.many-pairs-dense {
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px 2px;
+  min-height: 160px;
+}
+
+.table-pairs-container.many-pairs-dense .card-pair {
+  width: 50px;
+  height: 75px;
+}
+
+.table-pairs-container.many-pairs-dense .card-pair .playing-card {
+  width: 46px;
+  height: 68px;
+}
+
+.table-pairs-container.many-pairs-dense .card-pair .card-defense {
+  top: 8px;
+  left: 6px;
+}
+
+.table-pairs-container.many-pairs-dense .card-pair .card-corner {
+  font-size: 9px;
+  padding: 0px 1px;
+}
+
+.table-pairs-container.many-pairs-dense .card-pair .card-corner span:last-child {
+  font-size: 7px;
+}
+
+.table-pairs-container.many-pairs-dense .card-pair .card-center-suit {
+  font-size: 15px;
+}
+
+.table-pairs-container.many-pairs-dense .card-pair.highlight-target::after {
+  font-size: 6px;
+  bottom: -10px;
+}

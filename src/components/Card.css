@@ -1,0 +1,215 @@
+/* Card Styles */
+.playing-card {
+  position: relative;
+  width: 68px;
+  height: 98px;
+  background: linear-gradient(135deg, #ffffff 0%, #f2f2f2 100%);
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+  border: 1px solid #d1d8e0;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.15), box-shadow 0.2s ease, border-color 0.2s ease;
+  user-select: none;
+  overflow: hidden;
+}
+
+/* Card Ranks & Colors */
+.playing-card.red-suit {
+  color: var(--crimson);
+}
+
+.playing-card.black-suit {
+  color: var(--dark-suit);
+}
+
+/* Corner Numbers and Symbols */
+.card-corner {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 2px;
+}
+
+.card-corner span:first-child {
+  letter-spacing: -0.5px;
+}
+
+.card-corner span:last-child {
+  font-size: 11px;
+  margin-top: -1px;
+}
+
+.card-corner.top-left {
+  top: 4px;
+  left: 6px;
+}
+
+.card-corner.bottom-right {
+  bottom: 4px;
+  right: 6px;
+  transform: rotate(180deg);
+}
+
+/* Center Large Suit Symbol */
+.card-center-suit {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 26px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Card Face Down (Card Back) */
+.playing-card.face-down {
+  background: 
+    radial-gradient(var(--gold-dark) 15%, transparent 16%) 0 0,
+    radial-gradient(var(--gold-dark) 15%, transparent 16%) 8px 8px,
+    radial-gradient(rgba(255,255,255,.1) 15%, transparent 20%) 0 1px,
+    radial-gradient(rgba(255,255,255,.1) 15%, transparent 20%) 8px 9px,
+    #962d1f; /* Crimson backing */
+  background-size: 16px 16px;
+  border: 3px double var(--gold);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+  cursor: default;
+}
+
+/* Hide all face symbols when card is face-down */
+.playing-card.face-down * {
+  display: none !important;
+}
+
+/* Keep deck count badge visible on top of face-down stack */
+.playing-card.face-down .deck-count-badge {
+  display: flex !important;
+}
+
+/* Interactive States */
+.playing-card.playable {
+  box-shadow: 0 0 12px 3px var(--gold), 0 4px 8px rgba(0,0,0,0.3);
+  border-color: var(--gold);
+  border-width: 1.5px;
+}
+
+.playing-card.playable:hover {
+  transform: translateY(-8px) scale(1.08);
+  box-shadow: 0 0 16px 5px var(--gold), 0 8px 16px rgba(0,0,0,0.4);
+}
+
+.playing-card.selected {
+  transform: translateY(-15px) scale(1.08) !important;
+  box-shadow: 0 0 20px 6px var(--gold), 0 10px 20px rgba(0,0,0,0.5);
+  border: 2px solid var(--gold);
+}
+
+/* Fanned player hand */
+.hand-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 140px;
+  padding: 0 10px;
+  position: relative;
+}
+
+.fanned-hand {
+  display: flex;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+  height: 120px;
+}
+
+.fanned-hand .playing-card {
+  position: absolute;
+  bottom: 0;
+  transform-origin: bottom center;
+}
+
+/* Opponent small indicator card representation */
+.opponent-card-mini {
+  width: 24px;
+  height: 36px;
+  background: 
+    radial-gradient(#aa8c2c 15%, transparent 16%) 0 0,
+    #962d1f;
+  background-size: 8px 8px;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  margin-left: -16px;
+}
+
+.opponent-card-mini:first-child {
+  margin-left: 0;
+}
+
+/* Table Card Layouts */
+.table-pairs-container {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px 6px;
+  justify-items: center;
+  align-content: center;
+  width: 100%;
+  padding: 10px;
+  min-height: 220px;
+}
+
+.card-pair {
+  position: relative;
+  width: 72px;
+  height: 108px;
+}
+
+.card-pair .playing-card {
+  position: absolute;
+  width: 68px;
+  height: 98px;
+}
+
+/* Defender's card offset when covering attack card */
+.card-pair .card-defense {
+  top: 14px;
+  left: 12px;
+  z-index: 2;
+  transform: rotate(4deg);
+  box-shadow: -2px 2px 6px rgba(0,0,0,0.45);
+}
+
+.card-pair .card-attack {
+  top: 0;
+  left: 0;
+  z-index: 1;
+  transform: rotate(-3deg);
+}
+
+.card-pair.unblocked {
+  animation: float 2s infinite ease-in-out;
+}
+
+.card-pair.highlight-target {
+  outline: 2px dashed var(--gold);
+  outline-offset: 4px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.card-pair.highlight-target::after {
+  content: 'Đỡ vào đây';
+  position: absolute;
+  bottom: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8px;
+  color: var(--gold);
+  white-space: nowrap;
+  font-weight: 700;
+  text-transform: uppercase;
+}
