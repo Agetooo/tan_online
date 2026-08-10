@@ -102,14 +102,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true,
-            latency: 0,
-            channelCount: 1,
-            // Enforce aggressive software echo control and high-pass filtering (cuts bass hums)
-            googEchoCancellation: true,
-            googNoiseSuppression: true,
-            googAutoGainControl: true,
-            googHighpassFilter: true
+            autoGainControl: true
           }
         });
         localStreamRef.current = stream;
