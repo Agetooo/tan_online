@@ -96,7 +96,15 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
       });
     } else {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            latency: 0,
+            channelCount: 1
+          }
+        });
         localStreamRef.current = stream;
         setIsMicOn(true);
         socket.emit('voice-join', { roomId: roomState.id });
