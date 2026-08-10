@@ -229,7 +229,6 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
     });
   }, [roomState.players, socket, localPlayerId]);
 
-  const [timerSec, setTimerSec] = useState(null);
 
   useEffect(() => {
     if (!roomState.defenderWantsToTake || !roomState.takeTimerRemaining) {
@@ -923,6 +922,49 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
               })}
           </div>
 
+          {/* Seat Swap (Đổi Phong Thủy) Section */}
+          <div className="seat-swap-panel" style={{
+            width: '100%',
+            maxWidth: '240px',
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '10px',
+            padding: '10px',
+            marginBottom: '15px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--gold)', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+              🔄 Đổi chỗ (Đổi Phong Thủy)
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {roomState.players
+                .filter(p => p.id !== localPlayerId)
+                .map(p => (
+                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '5px 8px', borderRadius: '6px' }}>
+                    <span style={{ fontSize: '10px', fontWeight: '600', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.name} {p.isBot ? '(BOT)' : ''}
+                    </span>
+                    <button
+                      onClick={() => socket.emit('swap-request', { roomId: roomState.id, targetId: p.id })}
+                      disabled={roomState.swapRequest !== null}
+                      style={{
+                        padding: '3px 8px',
+                        background: 'linear-gradient(135deg, #3498db 0%, #2980b9 100%)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        fontSize: '9px',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🔄 Đổi
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '240px' }}>
             {localPlayer.isHost && (
               <button className="btn-gold" onClick={() => onStartGame(roomState.id)}>
@@ -932,6 +974,113 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
             <button className="btn-outline" onClick={onLeaveRoom}>
               Rời Phòng
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Swap Request Popups */}
+      {roomState.swapRequest && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          background: 'rgba(0,0,0,0.75)',
+          zIndex: 9999,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          backdropFilter: 'blur(5px)'
+        }}>
+          <div style={{
+            background: '#14281e',
+            border: '2px solid var(--gold)',
+            borderRadius: '12px',
+            padding: '20px 16px',
+            width: '85%',
+            maxWidth: '280px',
+            textAlign: 'center',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.6)'
+          }}>
+            {roomState.swapRequest.requesterId === localPlayerId ? (
+              // Requester view
+              <>
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>⏳</div>
+                <h3 style={{ color: '#fff', fontSize: '14px', fontWeight: '700', margin: '0 0 8px 0' }}>Đang đợi phản hồi</h3>
+                <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '0 0 15px 0' }}>
+                  Yêu cầu đổi chỗ đã được gửi tới <strong>{roomState.players.find(p => p.id === roomState.swapRequest.targetId)?.name}</strong>.
+                </p>
+                <button
+                  onClick={() => socket.emit('swap-cancel', { roomId: roomState.id })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 16px',
+                    background: 'linear-gradient(135deg, #7f8c8d 0%, #34495e 100%)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: '700',
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Hủy yêu cầu
+                </button>
+              </>
+            ) : roomState.swapRequest.targetId === localPlayerId ? (
+              // Target view
+              <>
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>🔔</div>
+                <h3 style={{ color: 'var(--gold)', fontSize: '14px', fontWeight: '800', margin: '0 0 8px 0' }}>Yêu Cầu Đổi Chỗ</h3>
+                <p style={{ fontSize: '12px', color: '#fff', margin: '0 0 15px 0', lineHeight: '1.4' }}>
+                  <strong>{roomState.players.find(p => p.id === roomState.swapRequest.requesterId)?.name}</strong> muốn đổi chỗ ngồi (phong thủy) với bạn. Bạn có đồng ý không?
+                </p>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => socket.emit('swap-accept', { roomId: roomState.id, requesterId: roomState.swapRequest.requesterId })}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      background: 'linear-gradient(135deg, #2ecc71 0%, #27ae60 100%)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontWeight: '700',
+                      fontSize: '11px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Đồng ý
+                  </button>
+                  <button
+                    onClick={() => socket.emit('swap-decline', { roomId: roomState.id, requesterId: roomState.swapRequest.requesterId })}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      background: 'linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontWeight: '700',
+                      fontSize: '11px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Từ chối
+                  </button>
+                </div>
+              </>
+            ) : (
+              // Other players view
+              <>
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>🔄</div>
+                <h3 style={{ color: 'var(--gold)', fontSize: '14px', fontWeight: '800', margin: '0 0 8px 0' }}>Đang đổi chỗ</h3>
+                <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '0 0 0 0' }}>
+                  <strong>{roomState.players.find(p => p.id === roomState.swapRequest.requesterId)?.name}</strong> đang yêu cầu đổi chỗ với <strong>{roomState.players.find(p => p.id === roomState.swapRequest.targetId)?.name}</strong>...
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}

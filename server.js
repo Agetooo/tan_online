@@ -73,7 +73,8 @@ function getCleanRoomState(room, requestSocketId) {
     defenderWantsToTake: room.defenderWantsToTake,
     winners: room.winners || [],
     lastWinners: room.lastWinners || [],
-    takeTimerRemaining: room.takeTimerExpiresAt ? Math.max(0, Math.ceil((room.takeTimerExpiresAt - Date.now()) / 1000)) : null
+    takeTimerRemaining: room.takeTimerExpiresAt ? Math.max(0, Math.ceil((room.takeTimerExpiresAt - Date.now()) / 1000)) : null,
+    swapRequest: room.swapRequest || null
   };
 }
 
@@ -878,6 +879,7 @@ io.on('connection', (socket) => {
     room.tablePairs = [];
     room.winners = [];
     room.takeTimerExpiresAt = null;
+    room.swapRequest = null; // Reset swap request
     if (room.takeTimeoutId) {
       clearTimeout(room.takeTimeoutId);
       room.takeTimeoutId = null;
@@ -1354,6 +1356,86 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 9.5. Seat Swap (Đổi phong thủy)
+  socket.on('swap-request', ({ roomId, targetId }) => {
+    const room = rooms.get(roomId);
+    if (!room || room.status !== 'game_over') return;
+
+    const requester = room.players.find(p => p.socketId === socket.id);
+    const target = room.players.find(p => p.id === targetId);
+    if (!requester || !target || requester.id === targetId) return;
+
+    if (target.isBot) {
+      // Swapping with a bot is approved instantly
+      const idxA = room.players.findIndex(p => p.id === requester.id);
+      const idxB = room.players.findIndex(p => p.id === target.id);
+      if (idxA !== -1 && idxB !== -1) {
+        const temp = room.players[idxA];
+        room.players[idxA] = room.players[idxB];
+        room.players[idxB] = temp;
+        logGame(room, `🔄 ${requester.name} đã đổi chỗ ngồi với Bot ${target.name} để đổi phong thủy.`);
+      }
+      room.swapRequest = null;
+      broadcastRoomState(room);
+    } else {
+      // Send request to human player
+      room.swapRequest = {
+        requesterId: requester.id,
+        targetId: target.id
+      };
+      broadcastRoomState(room);
+    }
+  });
+
+  socket.on('swap-accept', ({ roomId, requesterId }) => {
+    const room = rooms.get(roomId);
+    if (!room || room.status !== 'game_over') return;
+
+    if (!room.swapRequest || room.swapRequest.requesterId !== requesterId) return;
+
+    const requester = room.players.find(p => p.id === requesterId);
+    const target = room.players.find(p => p.socketId === socket.id);
+    if (!requester || !target) return;
+
+    const idxA = room.players.findIndex(p => p.id === requester.id);
+    const idxB = room.players.findIndex(p => p.id === target.id);
+    if (idxA !== -1 && idxB !== -1) {
+      const temp = room.players[idxA];
+      room.players[idxA] = room.players[idxB];
+      room.players[idxB] = temp;
+      logGame(room, `📣 ${requester.name} và ${target.name} đã đồng ý đổi chỗ ngồi cho nhau để đổi phong thủy!`);
+    }
+
+    room.swapRequest = null;
+    broadcastRoomState(room);
+  });
+
+  socket.on('swap-decline', ({ roomId, requesterId }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+
+    if (room.swapRequest && room.swapRequest.requesterId === requesterId) {
+      const target = room.players.find(p => p.socketId === socket.id);
+      const requester = room.players.find(p => p.id === requesterId);
+      if (requester && target) {
+        logGame(room, `❌ ${target.name} từ chối đổi chỗ ngồi với ${requester.name}.`);
+      }
+      room.swapRequest = null;
+      broadcastRoomState(room);
+    }
+  });
+
+  socket.on('swap-cancel', ({ roomId }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+
+    const requester = room.players.find(p => p.socketId === socket.id);
+    if (requester && room.swapRequest && room.swapRequest.requesterId === requester.id) {
+      room.swapRequest = null;
+      broadcastRoomState(room);
+    }
+  });
+
   // 10. Disconnect
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.id}`);
@@ -1366,6 +1448,11 @@ io.on('connection', (socket) => {
         player.voiceActive = false; // Reset voice state on disconnect
         socket.to(roomId).emit('voice-peer-left', { peerId: player.id });
         
+        // Reset swap request if player was involved
+        if (room.swapRequest && (room.swapRequest.requesterId === player.id || room.swapRequest.targetId === player.id)) {
+          room.swapRequest = null;
+        }
+
         if (room.status === 'lobby') {
           // If in lobby, simply remove the player
           room.players.splice(playerIndex, 1);
