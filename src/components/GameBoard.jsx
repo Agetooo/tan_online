@@ -333,7 +333,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
 
     if (pair.defense) {
       // Clicked on a defended pair: select it for shifting
-      setSelectedCardId(null); // Clear hand selection
+      setSelectedCardIds([]); // Clear hand selection
       if (selectedTablePairId === pair.id) {
         setSelectedTablePairId(null);
       } else {
@@ -364,7 +364,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
   const isDoubleRow = N > 10;
   const half = Math.ceil(N / 2);
 
-  const getCardStyle = (index) => {
+  const getCardStyle = (index, isSelected = false) => {
     if (N === 0) return {};
 
     let rowIndex = index;
@@ -390,15 +390,27 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
     const rotate = offset * angleStep;
     const translateX = offset * (maxSpan / rowCount);
     const translateY = Math.abs(offset) * 2;
-    const zIndex = zIndexOffset + rowIndex;
+    let zIndex = zIndexOffset + rowIndex;
+
+    // Apply selected lift, separate-out, scale, and zIndex offset
+    let liftOffset = 0;
+    let horizontalOffset = 0;
+    
+    if (isSelected) {
+      liftOffset = -35; // Lift up by 35px from normal hand row
+      scale = scale * 1.08;
+      zIndex = zIndex + 200;
+      horizontalOffset = offset * 4; // Spreads selected cards wider to prevent overlapping
+    }
 
     return {
       position: 'absolute',
-      bottom: `${bottomOffset}px`,
-      transform: `translateX(${translateX}px) rotate(${rotate}deg) translateY(${translateY}px) scale(${scale})`,
+      bottom: `${bottomOffset + liftOffset}px`,
+      transform: `translateX(${translateX + horizontalOffset}px) rotate(${rotate}deg) translateY(${translateY}px) scale(${scale})`,
       transformOrigin: 'bottom center',
       zIndex,
-      '--rotate': `${rotate}deg`
+      '--rotate': `${rotate}deg`,
+      transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.15)'
     };
   };
 
@@ -648,8 +660,11 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
                   if (shiftingCard) {
                     isHighlight = canDefend(pair.attack, shiftingCard, roomState.trumpSuit);
                   }
-                } else if (selectedCardId) {
-                  isHighlight = canDefend(pair.attack, selectedCard, roomState.trumpSuit);
+                } else if (selectedCardIds.length > 0) {
+                  const defenseCard = hand.find(c => selectedCardIds.includes(c.id));
+                  if (defenseCard) {
+                    isHighlight = canDefend(pair.attack, defenseCard, roomState.trumpSuit);
+                  }
                 }
               }
 
@@ -751,7 +766,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
                       key={card.id}
                       className={`playing-card ${getSuitClass(card.suit)} ${isPlayable ? 'playable' : ''} ${isSelected ? 'selected' : ''} deal-anim-bottom`}
                       style={{
-                        ...getCardStyle(index),
+                        ...getCardStyle(index, isSelected),
                         animationDelay: `${index * 80}ms`
                       }}
                       onClick={() => handleHandCardClick(card)}
