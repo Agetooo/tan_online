@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { canAttack, canDefend, SUIT_LABELS, SUIT_NAMES } from '../gameLogic';
 import './GameBoard.css';
 import './Card.css';
 
-export default function GameBoard({ roomState, onPlayCard, onPass, onTakeCards, onShiftDefense, onTransferAttack, onLeaveRoom, onStartGame }) {
+export default function GameBoard({ socket, roomState, onPlayCard, onPass, onTakeCards, onShiftDefense, onTransferAttack, onLeaveRoom, onStartGame }) {
   const [selectedCardId, setSelectedCardId] = useState(null);
   const [selectedTablePairId, setSelectedTablePairId] = useState(null);
 
@@ -19,6 +19,192 @@ export default function GameBoard({ roomState, onPlayCard, onPass, onTakeCards, 
     setSelectedCardId(null);
     setSelectedTablePairId(null);
   }, [hand.length, roomState.tablePairs.length]);
+
+  const peerConnections = useRef({});
+  const localStreamRef = useRef(null);
+  const [isMicOn, setIsMicOn] = useState(false);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleVoiceSignal = async ({ senderId, signal }) => {
+      let pc = peerConnections.current[senderId];
+
+      if (signal.type === 'offer') {
+        if (pc) pc.close();
+
+        pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+          ]
+        });
+        peerConnections.current[senderId] = pc;
+
+        if (localStreamRef.current) {
+          localStreamRef.current.getTracks().forEach(track => pc.addTrack(track, localStreamRef.current));
+        }
+
+        pc.onicecandidate = event => {
+          if (event.candidate) {
+            socket.emit('voice-signal', {
+              roomId: roomState.id,
+              targetId: senderId,
+              signal: { type: 'candidate', candidate: event.candidate }
+            });
+          }
+        };
+
+        pc.ontrack = event => {
+          playRemoteAudio(senderId, event.streams[0]);
+        };
+
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          socket.emit('voice-signal', {
+            roomId: roomState.id,
+            targetId: senderId,
+            signal: { type: 'answer', sdp: pc.localDescription }
+          });
+        } catch (err) {
+          console.error('Error handling WebRTC offer:', err);
+        }
+      } 
+      else if (signal.type === 'answer') {
+        if (pc) {
+          pc.setRemoteDescription(new RTCSessionDescription(signal.sdp))
+            .catch(err => console.error('Error setting remote description for answer:', err));
+        }
+      } 
+      else if (signal.type === 'candidate') {
+        if (pc) {
+          pc.addIceCandidate(new RTCIceCandidate(signal.candidate))
+            .catch(err => console.error('Error adding remote ICE candidate:', err));
+        }
+      }
+    };
+
+    const handleVoicePeerJoined = ({ peerId }) => {
+      if (localStreamRef.current) {
+        initiatePeerConnection(peerId, localStreamRef.current);
+      }
+    };
+
+    const handleVoicePeerLeft = ({ peerId }) => {
+      cleanupPeer(peerId);
+    };
+
+    socket.on('voice-signal', handleVoiceSignal);
+    socket.on('voice-peer-joined', handleVoicePeerJoined);
+    socket.on('voice-peer-left', handleVoicePeerLeft);
+
+    return () => {
+      socket.off('voice-signal', handleVoiceSignal);
+      socket.off('voice-peer-joined', handleVoicePeerJoined);
+      socket.off('voice-peer-left', handleVoicePeerLeft);
+      
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      Object.keys(peerConnections.current).forEach(peerId => {
+        cleanupPeer(peerId);
+      });
+    };
+  }, [socket, roomState?.id]);
+
+  const initiatePeerConnection = async (peerId, stream) => {
+    if (peerConnections.current[peerId]) return;
+
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    });
+    peerConnections.current[peerId] = pc;
+
+    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+    pc.onicecandidate = event => {
+      if (event.candidate) {
+        socket.emit('voice-signal', {
+          roomId: roomState.id,
+          targetId: peerId,
+          signal: { type: 'candidate', candidate: event.candidate }
+        });
+      }
+    };
+
+    pc.ontrack = event => {
+      playRemoteAudio(peerId, event.streams[0]);
+    };
+
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('voice-signal', {
+        roomId: roomState.id,
+        targetId: peerId,
+        signal: { type: 'offer', sdp: pc.localDescription }
+      });
+    } catch (err) {
+      console.error('Error creating WebRTC offer:', err);
+    }
+  };
+
+  const playRemoteAudio = (peerId, stream) => {
+    let audio = document.getElementById(`audio-peer-${peerId}`);
+    if (!audio) {
+      audio = document.createElement('audio');
+      audio.id = `audio-peer-${peerId}`;
+      audio.autoplay = true;
+      audio.style.display = 'none';
+      document.body.appendChild(audio);
+    }
+    audio.srcObject = stream;
+  };
+
+  const cleanupPeer = (peerId) => {
+    if (peerConnections.current[peerId]) {
+      peerConnections.current[peerId].close();
+      delete peerConnections.current[peerId];
+    }
+    const audio = document.getElementById(`audio-peer-${peerId}`);
+    if (audio) audio.remove();
+  };
+
+  const toggleMic = async () => {
+    if (isMicOn) {
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+      }
+      setIsMicOn(false);
+      socket.emit('voice-leave', { roomId: roomState.id });
+      
+      Object.keys(peerConnections.current).forEach(peerId => {
+        cleanupPeer(peerId);
+      });
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        localStreamRef.current = stream;
+        setIsMicOn(true);
+        socket.emit('voice-join', { roomId: roomState.id });
+
+        roomState.players.forEach(p => {
+          if (p.id !== localPlayerId && p.voiceActive && !p.isBot) {
+            initiatePeerConnection(p.id, stream);
+          }
+        });
+      } catch (err) {
+        alert('Không thể truy cập Microphone của bạn. Vui lòng cấp quyền micro trong cài đặt trình duyệt.');
+        console.error('Mic access error:', err);
+      }
+    }
+  };
 
   if (!localPlayer) return null;
 
@@ -177,7 +363,10 @@ export default function GameBoard({ roomState, onPlayCard, onPass, onTakeCards, 
           )}
         </div>
         <div className="opponent-info">
-          <div className="opponent-name">{player.name}</div>
+          <div className="opponent-name" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+            {player.name}
+            {player.voiceActive && <span style={{ color: '#2ecc71', fontSize: '10px' }}>🎙️</span>}
+          </div>
           {player.status !== 'win' && (
             <div className="opponent-cards-count">
               {Array.from({ length: player.handSize }).map((_, i) => (
@@ -197,15 +386,55 @@ export default function GameBoard({ roomState, onPlayCard, onPass, onTakeCards, 
     <div className="game-board">
       {/* Header */}
       <div className="game-header">
-        <div className="game-title-info">
-          <span style={{ fontWeight: 800, color: 'var(--gold)' }}>Bài Tấn</span>
-          <span style={{ fontSize: '12px', background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '6px' }}>
-            Phòng: {roomState.id}
-          </span>
+        <div className="game-title-info" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontWeight: 800, color: 'var(--gold)' }}>Bài Tấn</span>
+            <span style={{ fontSize: '12px', background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '6px' }}>
+              Phòng: {roomState.id}
+            </span>
+          </div>
+          {roomState.lastWinners && roomState.lastWinners.length > 0 && (
+            <div className="last-winners-ticker" style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', marginTop: '2px' }}>
+              <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Trước:</span>
+              {roomState.lastWinners.map((pid, idx) => {
+                const p = roomState.players.find(pl => pl.id === pid);
+                if (!p) return null;
+                const emoji = idx === 0 ? '🏆' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '☠️';
+                return (
+                  <span key={pid} style={{ display: 'inline-flex', alignItems: 'center', gap: '1px' }}>
+                    {emoji}{p.name}
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
-        <button className="btn-exit" onClick={onLeaveRoom}>
-          Rời bàn
-        </button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button 
+            className="btn-mic" 
+            onClick={toggleMic}
+            style={{
+              background: isMicOn ? 'linear-gradient(135deg, #2ecc71 0%, #27ae60 100%)' : 'linear-gradient(135deg, #7f8c8d 0%, #34495e 100%)',
+              color: '#fff',
+              border: 'none',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {isMicOn ? '🎙️ Mic: Bật' : '🔇 Mic: Tắt'}
+          </button>
+          <button className="btn-exit" onClick={onLeaveRoom}>
+            Rời bàn
+          </button>
+        </div>
       </div>
 
       {/* Play Area */}
@@ -320,7 +549,10 @@ export default function GameBoard({ roomState, onPlayCard, onPass, onTakeCards, 
         {/* Bottom Player Area */}
         <div className="player-area-bottom">
           <div className="player-header">
-            <span style={{ fontWeight: 700, fontSize: '14px' }}>Bài của bạn</span>
+            <span style={{ fontWeight: 700, fontSize: '14px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              Bài của bạn
+              {localPlayer.voiceActive && <span style={{ color: '#2ecc71', fontSize: '12px' }}>🎙️</span>}
+            </span>
             <div className="player-status-badge">
               {roomState.passedPlayers.includes(localPlayerId) ? (
                 <span className="action-badge" style={{ background: '#7f8c8d' }}>👌 Bạn đã Hết cửa</span>

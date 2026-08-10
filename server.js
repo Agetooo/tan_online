@@ -71,7 +71,8 @@ function getCleanRoomState(room, requestSocketId) {
     logs: room.logs,
     passedPlayers: room.passedPlayers,
     defenderWantsToTake: room.defenderWantsToTake,
-    winners: room.winners || []
+    winners: room.winners || [],
+    lastWinners: room.lastWinners || []
   };
 }
 
@@ -97,8 +98,29 @@ function getNextActivePlayerIndex(room, startIndex) {
   return -1;
 }
 
-// Determine who has the lowest trump card to start the first turn
+// Determine who starts the first turn of a new game.
+// If there was a previous game and the winner is still in the room, they start.
+// Otherwise, the player with the lowest trump card starts.
 function determineFirstAttacker(room) {
+  // If a player swapped the 2 of trump, they ALWAYS start first (overriding previous game winner!)
+  if (room.twoOfTrumpStarterId) {
+    const starter = room.players.find(p => p.id === room.twoOfTrumpStarterId);
+    // Reset the starter ID
+    room.twoOfTrumpStarterId = null;
+    if (starter) {
+      return starter;
+    }
+  }
+
+  // Check if we have a winner from the previous game who is still active in this game
+  if (room.lastWinnerId) {
+    const prevWinner = room.players.find(p => p.id === room.lastWinnerId);
+    if (prevWinner) {
+      logGame(room, `👑 ${prevWinner.name} thắng ván trước nên được quyền tấn đầu tiên.`);
+      return prevWinner;
+    }
+  }
+
   let firstAttacker = null;
   let lowestTrumpRank = 15; // Higher than Ace (14)
 
@@ -212,6 +234,10 @@ function checkWinConditions(room) {
         room.winners.push(p.id);
       }
     });
+    // Store the final ranking results in lastWinners and lastWinnerId
+    room.lastWinners = [...room.winners];
+    room.lastWinnerId = room.winners[0];
+
     logGame(room, `🏁 Trò chơi kết thúc! Bảng xếp hạng: ${room.winners.map((id, i) => `${i+1}. ${room.players.find(p => p.id === id).name}`).join(', ')}`);
     return true;
   }
@@ -798,14 +824,64 @@ io.on('connection', (socket) => {
       }
     });
 
+    // Save the previous trump suit to avoid repeating it
+    const prevTrumpSuit = room.trumpSuit;
+    room.lastTrumpSuit = prevTrumpSuit;
+
     // Determine Trump Suit (chất trưởng)
-    // Draw 1 card, lật ngửa
-    const trumpCard = room.deck.pop();
+    // Draw 1 card, lật ngửa, ensuring rank < 10 and suit is different from previous game
+    let trumpCard = null;
+    let attempts = 0;
+    while (attempts < 100) {
+      const card = room.deck.pop();
+      const isValidRank = card.rank < 10;
+      const isValidSuit = !prevTrumpSuit || card.suit !== prevTrumpSuit;
+
+      if (isValidRank && isValidSuit) {
+        trumpCard = card;
+        break;
+      } else {
+        // Put it back to the bottom of the deck and draw another
+        room.deck.unshift(card);
+        attempts++;
+      }
+    }
+
+    // Fallback if loop didn't find (highly unlikely)
+    if (!trumpCard) {
+      trumpCard = room.deck.pop();
+    }
+
     room.trumpCard = trumpCard;
     room.trumpSuit = trumpCard.suit;
 
     // Put it back to the bottom of the deck (first to be drawn last)
     room.deck.unshift(trumpCard);
+
+    // Check if any player has the 2 of Trump (2_trumpSuit) to exchange it for the face-up card
+    room.twoOfTrumpStarterId = null;
+    let swapPlayer = null;
+    let cardIdx = -1;
+    room.players.forEach(p => {
+      const idx = p.hand.findIndex(c => c.id === `2_${room.trumpSuit}`);
+      if (idx !== -1) {
+        swapPlayer = p;
+        cardIdx = idx;
+      }
+    });
+
+    if (swapPlayer) {
+      const playerTwoCard = swapPlayer.hand[cardIdx];
+      const deckTrumpCard = room.trumpCard;
+
+      // Swap: player gets the face-up card, bottom of deck gets the 2 of trump
+      swapPlayer.hand[cardIdx] = deckTrumpCard;
+      room.deck[0] = playerTwoCard;
+      room.trumpCard = playerTwoCard;
+      room.twoOfTrumpStarterId = swapPlayer.id;
+
+      logGame(room, `🔄 ${swapPlayer.name} sở hữu 2 Trưởng, tự động đổi lấy quân lật ${deckTrumpCard.rank} ${deckTrumpCard.suit} và giành quyền tấn đầu.`);
+    }
 
     logGame(room, `🃏 Bắt đầu chơi! Chất trưởng là: ${room.trumpSuit.toUpperCase()} (${trumpCard.rank} ${trumpCard.suit}).`);
 
@@ -1034,6 +1110,50 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 9.5. Signaling for Voice Chat
+  socket.on('voice-join', ({ roomId }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player) return;
+    
+    player.voiceActive = true;
+    logGame(room, `🎙️ ${player.name} đã bật Voice Chat.`);
+    broadcastRoomState(room);
+    
+    // Notify other players in the room to initiate connection
+    socket.to(roomId).emit('voice-peer-joined', { peerId: player.id });
+  });
+
+  socket.on('voice-leave', ({ roomId }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player) return;
+    
+    player.voiceActive = false;
+    logGame(room, `🔇 ${player.name} đã tắt Voice Chat.`);
+    broadcastRoomState(room);
+    
+    socket.to(roomId).emit('voice-peer-left', { peerId: player.id });
+  });
+
+  socket.on('voice-signal', ({ roomId, targetId, signal }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+    
+    const targetPlayer = room.players.find(p => p.id === targetId);
+    if (targetPlayer && targetPlayer.socketId) {
+      const sender = room.players.find(p => p.socketId === socket.id);
+      if (sender) {
+        io.to(targetPlayer.socketId).emit('voice-signal', {
+          senderId: sender.id,
+          signal
+        });
+      }
+    }
+  });
+
   // 10. Disconnect
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.id}`);
@@ -1043,6 +1163,8 @@ io.on('connection', (socket) => {
       const playerIndex = room.players.findIndex(p => p.socketId === socket.id);
       if (playerIndex !== -1) {
         const player = room.players[playerIndex];
+        player.voiceActive = false; // Reset voice state on disconnect
+        socket.to(roomId).emit('voice-peer-left', { peerId: player.id });
         
         if (room.status === 'lobby') {
           // If in lobby, simply remove the player

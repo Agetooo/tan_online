@@ -174,6 +174,7 @@ export default function App() {
         />
       ) : (
         <GameBoard
+          socket={socketRef.current}
           roomState={roomState}
           onPlayCard={handlePlayCard}
           onPass={handlePass}
