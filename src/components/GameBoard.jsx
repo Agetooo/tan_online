@@ -12,21 +12,50 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
 
   const peerConnections = useRef({});
   const localStreamRef = useRef(null);
+  const remoteAudioNodes = useRef({});
+
+  const cleanupPeerAudio = (peerId) => {
+    if (remoteAudioNodes.current && remoteAudioNodes.current[peerId]) {
+      const { audioCtx } = remoteAudioNodes.current[peerId];
+      try {
+        if (audioCtx.state !== 'closed') {
+          audioCtx.close();
+        }
+      } catch (err) {
+        console.error('Error closing AudioContext:', err);
+      }
+      delete remoteAudioNodes.current[peerId];
+    }
+    const audio = document.getElementById(`audio-peer-${peerId}`);
+    if (audio) audio.remove();
+  };
 
   // Helper functions defined at the top to avoid TDZ errors
   const playRemoteAudio = (peerId, stream) => {
-    let audio = document.getElementById(`audio-peer-${peerId}`);
-    if (!audio) {
-      audio = document.createElement('audio');
-      audio.id = `audio-peer-${peerId}`;
-      audio.autoplay = true;
-      audio.style.display = 'none';
-      // Set default volume slightly below 1.0 to prevent acoustic feedback coupling on mobile speakers
-      audio.volume = 0.8;
-      document.body.appendChild(audio);
+    cleanupPeerAudio(peerId);
+
+    try {
+      const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtxClass) return;
+
+      const audioCtx = new AudioCtxClass();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const gainNode = audioCtx.createGain();
+      
+      // Default volume level is 0.8
+      gainNode.gain.value = isSpeakerOn ? 0.8 : 0;
+      
+      source.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+
+      remoteAudioNodes.current[peerId] = { audioCtx, gainNode };
+    } catch (err) {
+      console.error('Error playing remote Web Audio:', err);
     }
-    audio.srcObject = stream;
-    audio.muted = !isSpeakerOn;
   };
 
   const cleanupPeer = (peerId) => {
@@ -34,8 +63,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
       peerConnections.current[peerId].close();
       delete peerConnections.current[peerId];
     }
-    const audio = document.getElementById(`audio-peer-${peerId}`);
-    if (audio) audio.remove();
+    cleanupPeerAudio(peerId);
   };
 
   const initiatePeerConnection = async (peerId, stream = null) => {
@@ -217,6 +245,11 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
       Object.keys(peerConnections.current).forEach(peerId => {
         cleanupPeer(peerId);
       });
+      if (remoteAudioNodes.current) {
+        Object.keys(remoteAudioNodes.current).forEach(peerId => {
+          cleanupPeerAudio(peerId);
+        });
+      }
     };
   }, [socket, roomState?.id]);
 
@@ -254,7 +287,17 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
   }, [roomState.defenderWantsToTake, roomState.takeTimerRemaining]);
 
   useEffect(() => {
-    // Update mute state on all active peer audio elements
+    // Update gain values of all Web Audio nodes
+    if (remoteAudioNodes.current) {
+      Object.keys(remoteAudioNodes.current).forEach(peerId => {
+        const { gainNode } = remoteAudioNodes.current[peerId];
+        if (gainNode) {
+          gainNode.gain.value = isSpeakerOn ? 0.8 : 0;
+        }
+      });
+    }
+
+    // Fallback: also update mute state on any active peer audio elements
     roomState.players.forEach(p => {
       const audio = document.getElementById(`audio-peer-${p.id}`);
       if (audio) {
@@ -262,6 +305,17 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
       }
     });
   }, [isSpeakerOn, roomState.players]);
+
+  const resumeAudioContexts = () => {
+    if (remoteAudioNodes.current) {
+      Object.keys(remoteAudioNodes.current).forEach(peerId => {
+        const { audioCtx } = remoteAudioNodes.current[peerId];
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+      });
+    }
+  };
 
   if (!localPlayer) return null;
 
@@ -498,7 +552,7 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
   };
 
     return (
-    <div className="game-board">
+    <div className="game-board" onClick={resumeAudioContexts}>
       {/* Countdown timer alert for 3s or less */}
       {localTimer > 0 && localTimer <= 3 && (
         <div className="timer-alert-overlay" style={{
