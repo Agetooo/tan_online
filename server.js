@@ -369,6 +369,10 @@ function handleBotDecision(room, bot) {
             room.maxAttacks = nextPlayer.hand.length;
             
             broadcastRoomState(room);
+            if (checkWinConditions(room)) {
+              broadcastRoomState(room);
+              return;
+            }
             triggerBotAction(room);
             return;
           }
@@ -410,6 +414,10 @@ function handleBotDecision(room, bot) {
         logGame(room, `📣 Bot ${bot.name} đã hết bài! Các người chơi khác có 10 giây để chạy bài (theo bài)...`);
       }
       broadcastRoomState(room);
+      if (checkWinConditions(room)) {
+        broadcastRoomState(room);
+        return;
+      }
       checkRoundResolution(room);
 
       // Trigger next actions (other bots might attack, or defender might defend more)
@@ -452,6 +460,10 @@ function handleBotDecision(room, bot) {
           logGame(room, `📣 Bot ${bot.name} đã hết bài! Các người chơi khác có 10 giây để chạy bài (theo bài)...`);
         }
         broadcastRoomState(room);
+        if (checkWinConditions(room)) {
+          broadcastRoomState(room);
+          return;
+        }
         checkRoundResolution(room);
 
         triggerBotAction(room);
@@ -503,6 +515,10 @@ function handleBotDecision(room, bot) {
           logGame(room, `📣 Bot ${bot.name} đã hết bài! Các người chơi khác có 10 giây để chạy bài (theo bài)...`);
         }
         broadcastRoomState(room);
+        if (checkWinConditions(room)) {
+          broadcastRoomState(room);
+          return;
+        }
         checkRoundResolution(room);
 
         triggerBotAction(room);
@@ -1003,6 +1019,10 @@ io.on('connection', (socket) => {
           logGame(room, `📣 ${player.name} đã hết bài! Các người chơi khác có 10 giây để chạy bài (theo bài)...`);
         }
         broadcastRoomState(room);
+        if (checkWinConditions(room)) {
+          broadcastRoomState(room);
+          return;
+        }
         checkRoundResolution(room);
 
         // Check if bots need to respond
@@ -1050,6 +1070,10 @@ io.on('connection', (socket) => {
           logGame(room, `📣 ${player.name} đã hết bài! Các người chơi khác có 10 giây để chạy bài (theo bài)...`);
         }
         broadcastRoomState(room);
+        if (checkWinConditions(room)) {
+          broadcastRoomState(room);
+          return;
+        }
         checkRoundResolution(room);
 
         // Check if bots need to respond
@@ -1153,6 +1177,10 @@ io.on('connection', (socket) => {
     }
 
     broadcastRoomState(room);
+    if (checkWinConditions(room)) {
+      broadcastRoomState(room);
+      return;
+    }
     checkRoundResolution(room);
 
     // Trigger bot action to respond to the new attacks
@@ -1301,6 +1329,10 @@ io.on('connection', (socket) => {
     room.maxAttacks = nextPlayer.hand.length;
 
     broadcastRoomState(room);
+    if (checkWinConditions(room)) {
+      broadcastRoomState(room);
+      return;
+    }
     triggerBotAction(room);
   });
 
