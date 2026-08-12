@@ -74,10 +74,10 @@ export default function App() {
     }, 3000);
   };
 
-  const handleCreateRoom = () => {
+  const handleCreateRoom = (maxPlayers) => {
     if (!username.trim()) return;
     sessionStorage.setItem('tan_username', username);
-    socketRef.current.emit('create-room', { username });
+    socketRef.current.emit('create-room', { username, maxPlayers });
   };
 
   const handleJoinRoom = (targetRoomId) => {

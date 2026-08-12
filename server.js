@@ -74,7 +74,9 @@ function getCleanRoomState(room, requestSocketId) {
     winners: room.winners || [],
     lastWinners: room.lastWinners || [],
     takeTimerRemaining: room.takeTimerExpiresAt ? Math.max(0, Math.ceil((room.takeTimerExpiresAt - Date.now()) / 1000)) : null,
-    swapRequest: room.swapRequest || null
+    swapRequest: room.swapRequest || null,
+    maxPlayers: room.maxPlayers || 4,
+    targetHandSize: room.targetHandSize || 8
   };
 }
 
@@ -186,10 +188,11 @@ function drawCardsForPlayers(room) {
   // Filter out won/out players
   const activeDrawers = order.filter(p => p.status !== 'win' && p.status !== 'out');
 
-  // Draw until everyone has 8 cards or deck is empty
+  // Draw until everyone has target cards or deck is empty
   let cardDrawn = false;
+  const targetHandSize = room.targetHandSize || 8;
   activeDrawers.forEach(player => {
-    while (player.hand.length < 8 && room.deck.length > 0) {
+    while (player.hand.length < targetHandSize && room.deck.length > 0) {
       const drawnCard = room.deck.pop();
       player.hand.push(drawnCard);
       cardDrawn = true;
@@ -621,7 +624,8 @@ function checkRoundResolution(room) {
     if (defender.hand.length === 0 && hasUndefended) {
       if (room.deck.length > 0) {
         let drawnCount = 0;
-        while (defender.hand.length < 8 && room.deck.length > 0) {
+        const targetHandSize = room.targetHandSize || 8;
+        while (defender.hand.length < targetHandSize && room.deck.length > 0) {
           defender.hand.push(room.deck.pop());
           drawnCount++;
         }
@@ -732,8 +736,10 @@ io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   // 1. Create Room
-  socket.on('create-room', ({ username }) => {
+  socket.on('create-room', ({ username, maxPlayers }) => {
     const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const playersLimit = maxPlayers === 5 ? 5 : 4;
+    const initialHandSize = playersLimit === 5 ? 6 : 8;
     const newRoom = {
       id: roomId,
       status: 'lobby',
@@ -757,7 +763,9 @@ io.on('connection', (socket) => {
       defenderId: null,
       firstAttackerId: null,
       logs: [],
-      maxAttacks: 8,
+      maxAttacks: initialHandSize,
+      maxPlayers: playersLimit,
+      targetHandSize: initialHandSize,
       passedPlayers: [],
       roundActive: false
     };
@@ -793,8 +801,9 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (room.players.length >= 4) {
-      socket.emit('error', 'Phòng đã đầy (tối đa 4 người).');
+    const maxPlayers = room.maxPlayers || 4;
+    if (room.players.length >= maxPlayers) {
+      socket.emit('error', `Phòng đã đầy (tối đa ${maxPlayers} người).`);
       return;
     }
 
@@ -820,7 +829,8 @@ io.on('connection', (socket) => {
     const room = rooms.get(roomId);
     if (!room) return;
 
-    if (room.players.length >= 4) {
+    const maxPlayers = room.maxPlayers || 4;
+    if (room.players.length >= maxPlayers) {
       socket.emit('error', 'Phòng đã đầy.');
       return;
     }
@@ -901,11 +911,12 @@ io.on('connection', (socket) => {
       room.takeTimeoutId = null;
     }
 
-    // Deal 8 cards to each player
+    // Deal cards to each player
+    const targetHandSize = room.targetHandSize || 8;
     room.players.forEach(p => {
       p.hand = [];
       p.status = 'idle';
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < targetHandSize; i++) {
         p.hand.push(room.deck.pop());
       }
     });

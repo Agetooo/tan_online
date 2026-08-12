@@ -352,6 +352,11 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
     slots.left = otherPlayers[0];
     slots.top = otherPlayers[1];
     slots.right = otherPlayers[2];
+  } else if (otherPlayers.length === 4) {
+    slots.left = otherPlayers[0];
+    slots.topLeft = otherPlayers[1];
+    slots.topRight = otherPlayers[2];
+    slots.right = otherPlayers[3];
   }
 
   // Get active turn player ID
@@ -680,7 +685,9 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
         {/* Opponents */}
         <div className="opponents-container">
           {renderPlayerSlot(slots.left, 'slot-left')}
+          {renderPlayerSlot(slots.topLeft, 'slot-top-left')}
           {renderPlayerSlot(slots.top, 'slot-top')}
+          {renderPlayerSlot(slots.topRight, 'slot-top-right')}
           {renderPlayerSlot(slots.right, 'slot-right')}
         </div>
 

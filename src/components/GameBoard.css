@@ -82,6 +82,18 @@
   right: 10px;
 }
 
+.opponent-slot.slot-top-left {
+  top: 10px;
+  left: 28%;
+  transform: translateX(-50%);
+}
+
+.opponent-slot.slot-top-right {
+  top: 10px;
+  left: 72%;
+  transform: translateX(-50%);
+}
+
 .opponent-avatar-wrapper {
   position: relative;
   width: 54px;

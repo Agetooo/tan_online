@@ -14,6 +14,7 @@ export default function Lobby({
 }) {
   const [inputRoomId, setInputRoomId] = useState('');
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [maxPlayers, setMaxPlayers] = useState(4);
 
   // Load username from localStorage on mount
   useEffect(() => {
@@ -62,12 +63,65 @@ export default function Lobby({
             />
           </div>
 
+          <div className="lobby-section" style={{ marginTop: '16px' }}>
+            <label style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-secondary)' }}>
+              CHẾ ĐỘ CHƠI
+            </label>
+            <div className="game-mode-selector" style={{ display: 'flex', gap: '10px' }}>
+              <div 
+                className={`mode-option ${maxPlayers === 4 ? 'active' : ''}`}
+                onClick={() => setMaxPlayers(4)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '12px',
+                  background: maxPlayers === 4 ? 'rgba(212, 175, 55, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                  border: maxPlayers === 4 ? '2px solid var(--gold)' : '2px solid rgba(255, 255, 255, 0.1)',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  transition: 'all 0.2s ease',
+                  boxShadow: maxPlayers === 4 ? '0 0 10px rgba(212, 175, 55, 0.3)' : 'none',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  minHeight: '68px'
+                }}
+              >
+                <div style={{ fontSize: '16px', fontWeight: 'bold' }}>👥 4 Người</div>
+              </div>
+              <div 
+                className={`mode-option ${maxPlayers === 5 ? 'active' : ''}`}
+                onClick={() => setMaxPlayers(5)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '12px',
+                  background: maxPlayers === 5 ? 'rgba(212, 175, 55, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                  border: maxPlayers === 5 ? '2px solid var(--gold)' : '2px solid rgba(255, 255, 255, 0.1)',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  transition: 'all 0.2s ease',
+                  boxShadow: maxPlayers === 5 ? '0 0 10px rgba(212, 175, 55, 0.3)' : 'none',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  minHeight: '68px'
+                }}
+              >
+                <div style={{ fontSize: '16px', marginBottom: '4px', fontWeight: 'bold' }}>👥 5 Người</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>cho phong chơi với</div>
+              </div>
+            </div>
+          </div>
+
           <div className="lobby-divider" style={{ margin: '24px 0' }}></div>
 
           <div className="lobby-section" style={{ gap: '14px' }}>
             <button
               className="btn-gold"
-              onClick={onCreateRoom}
+              onClick={() => onCreateRoom(maxPlayers)}
               disabled={!username.trim()}
               style={{ width: '100%' }}
             >
@@ -128,7 +182,7 @@ export default function Lobby({
         </div>
 
         <div className="lobby-divider" style={{ margin: '16px 0' }}>
-          NGƯỜI CHƠI ({roomState.players.length}/4)
+          NGƯỜI CHƠI ({roomState.players.length}/{roomState.maxPlayers || 4})
         </div>
 
         <div className="lobby-players-list">
@@ -168,7 +222,7 @@ export default function Lobby({
               <button
                 className="btn-outline"
                 onClick={onAddBot}
-                disabled={roomState.players.length >= 4}
+                disabled={roomState.players.length >= (roomState.maxPlayers || 4)}
                 style={{ width: '100%' }}
               >
                 🤖 Thêm Robot
