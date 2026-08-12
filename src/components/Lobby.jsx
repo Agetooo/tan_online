@@ -49,6 +49,26 @@ export default function Lobby({
         </div>
 
         <div className="lobby-panel glass-panel">
+          <div className="china-firewall-notice" style={{
+            background: 'rgba(230, 126, 34, 0.12)',
+            border: '1px solid rgba(230, 126, 34, 0.25)',
+            borderRadius: '8px',
+            padding: '10px 14px',
+            marginBottom: '16px',
+            fontSize: '11px',
+            color: '#e67e22',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '8px',
+            lineHeight: '1.4',
+            textAlign: 'left'
+          }}>
+            <span style={{ fontSize: '14px' }}>📢</span>
+            <div>
+              <strong>Lưu ý kết nối:</strong> Người chơi từ Trung Quốc có thể bị chặn kết nối Voice Chat do tường lửa. Bạn có thể sử dụng tính năng <strong>Chat tay</strong> trong bàn để trò chuyện thay thế.
+            </div>
+          </div>
+
           <div className="lobby-section">
             <label style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-secondary)' }}>
               TÊN NGƯỜI CHƠI

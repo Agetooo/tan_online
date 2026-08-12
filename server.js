@@ -76,7 +76,8 @@ function getCleanRoomState(room, requestSocketId) {
     takeTimerRemaining: room.takeTimerExpiresAt ? Math.max(0, Math.ceil((room.takeTimerExpiresAt - Date.now()) / 1000)) : null,
     swapRequest: room.swapRequest || null,
     maxPlayers: room.maxPlayers || 4,
-    targetHandSize: room.targetHandSize || 8
+    targetHandSize: room.targetHandSize || 8,
+    chats: room.chats || []
   };
 }
 
@@ -767,7 +768,8 @@ io.on('connection', (socket) => {
       maxPlayers: playersLimit,
       targetHandSize: initialHandSize,
       passedPlayers: [],
-      roundActive: false
+      roundActive: false,
+      chats: []
     };
 
     rooms.set(roomId, newRoom);
@@ -1477,6 +1479,30 @@ io.on('connection', (socket) => {
       room.swapRequest = null;
       broadcastRoomState(room);
     }
+  });
+
+  // 9.6. Send Chat Message
+  socket.on('send-chat-message', ({ roomId, message }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player) return;
+
+    if (!room.chats) room.chats = [];
+    const chatMsg = {
+      id: `chat_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      senderName: player.name,
+      senderId: player.id,
+      text: message,
+      timestamp: Date.now()
+    };
+    room.chats.push(chatMsg);
+    if (room.chats.length > 50) {
+      room.chats.shift();
+    }
+
+    io.to(roomId).emit('chat-message-received', chatMsg);
+    broadcastRoomState(room); // Sync state for reconnecting players
   });
 
   // 10. Disconnect

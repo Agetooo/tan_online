@@ -9,6 +9,12 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
   const [localTimer, setLocalTimer] = useState(0);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [isMicOn, setIsMicOn] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [activeBubbles, setActiveBubbles] = useState({});
+
+  const messagesEndRef = useRef(null);
 
   const peerConnections = useRef({});
   const localStreamRef = useRef(null);
@@ -246,10 +252,36 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
       }
     };
 
+    const handleChatMessage = (msg) => {
+      setActiveBubbles(prev => ({
+        ...prev,
+        [msg.senderId]: msg.text
+      }));
+
+      setTimeout(() => {
+        setActiveBubbles(prev => {
+          const next = { ...prev };
+          if (next[msg.senderId] === msg.text) {
+            delete next[msg.senderId];
+          }
+          return next;
+        });
+      }, 4000);
+
+      setIsChatOpen(open => {
+        if (!open) {
+          setUnreadCount(c => c + 1);
+        }
+        return open;
+      });
+    };
+
     socket.on('voice-signal', handleVoiceSignal);
+    socket.on('chat-message-received', handleChatMessage);
 
     return () => {
       socket.off('voice-signal', handleVoiceSignal);
+      socket.off('chat-message-received', handleChatMessage);
       
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
@@ -264,6 +296,29 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
       }
     };
   }, [socket, roomState?.id]);
+
+  useEffect(() => {
+    if (isChatOpen) {
+      setUnreadCount(0);
+    }
+  }, [isChatOpen]);
+
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [roomState.chats?.length]);
+
+  const handleSendChat = (e) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !socket || !roomState.id) return;
+
+    socket.emit('send-chat-message', {
+      roomId: roomState.id,
+      message: chatInput.trim()
+    });
+    setChatInput('');
+  };
 
   // Autoconnect to all other active human players regardless of microphone state
   useEffect(() => {
@@ -512,6 +567,11 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
     return (
       <div className={`opponent-slot ${slotClass} ${isTurn ? 'active-turn' : ''}`} key={player.id}>
         <div className="opponent-avatar-wrapper">
+          {activeBubbles[player.id] && (
+            <div className="chat-bubble-popup">
+              {activeBubbles[player.id]}
+            </div>
+          )}
           {showProgressRing && (
             <svg className="avatar-timer-svg" viewBox="0 0 50 50">
               <circle cx="25" cy="25" r="23" stroke="rgba(255,255,255,0.15)" strokeWidth="3.5" fill="none" />
@@ -667,6 +727,51 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
           </button>
 
           <button 
+            className="btn-chat" 
+            onClick={() => setIsChatOpen(prev => !prev)}
+            title="Trò chuyện"
+            style={{
+              background: 'linear-gradient(135deg, #f1c40f 0%, #d4af37 100%)',
+              color: '#121e18',
+              border: 'none',
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              fontSize: '14px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+              transition: 'all 0.2s ease',
+              padding: 0,
+              position: 'relative'
+            }}
+          >
+            💬
+            {unreadCount > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: '-4px',
+                right: '-4px',
+                background: '#e74c3c',
+                color: '#fff',
+                fontSize: '9px',
+                fontWeight: 700,
+                borderRadius: '50%',
+                width: '15px',
+                height: '15px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px solid #fff'
+              }}>
+                {unreadCount}
+              </span>
+            )}
+          </button>
+
+          <button 
             className="btn-exit" 
             onClick={onLeaveRoom}
             style={{
@@ -795,9 +900,14 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
         </div>
 
         {/* Bottom Player Area */}
-        <div className="player-area-bottom">
+        <div className="player-area-bottom" style={{ position: 'relative' }}>
           <div className="player-header">
             <span style={{ fontWeight: 700, fontSize: '14px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              {activeBubbles[localPlayerId] && (
+                <div className="chat-bubble-popup local-bubble">
+                  {activeBubbles[localPlayerId]}
+                </div>
+              )}
               Bài của bạn
               {localPlayer.voiceActive && <span style={{ color: '#2ecc71', fontSize: '12px' }}>🎙️</span>}
               {localPlayer.id === roomState.defenderId && roomState.defenderWantsToTake && localTimer > 0 && (
@@ -1178,6 +1288,38 @@ export default function GameBoard({ socket, roomState, onPlayCard, onPlayCards, 
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Slide-out Chat Drawer */}
+      {isChatOpen && (
+        <div className="chat-drawer glass-panel">
+          <div className="chat-drawer-header">
+            <h3>💬 HỘP THOẠI CHAT</h3>
+            <button className="btn-close-chat" onClick={() => setIsChatOpen(false)}>×</button>
+          </div>
+          <div className="chat-drawer-messages">
+            {roomState.chats && roomState.chats.map((chat) => (
+              <div 
+                key={chat.id} 
+                className={`chat-message-item ${chat.senderId === localPlayerId ? 'self' : ''}`}
+              >
+                <span className="chat-sender">{chat.senderName}</span>
+                <span className="chat-text">{chat.text}</span>
+              </div>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+          <form className="chat-drawer-input-row" onSubmit={handleSendChat}>
+            <input
+              type="text"
+              placeholder="Nhập tin nhắn..."
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              maxLength={100}
+            />
+            <button type="submit">Gửi</button>
+          </form>
         </div>
       )}
     </div>
