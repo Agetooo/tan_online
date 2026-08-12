@@ -65,7 +65,7 @@ export default function Lobby({
           }}>
             <span style={{ fontSize: '14px' }}>📢</span>
             <div>
-              <strong>Lưu ý kết nối:</strong> Người chơi từ Trung Quốc có thể bị chặn kết nối Voice Chat do tường lửa. Bạn có thể sử dụng tính năng <strong>Chat tay</strong> trong bàn để trò chuyện thay thế.
+              <strong>Lưu ý kết nối:</strong> Người chơi từ Trung Quốc có thể bị chặn kết nối Voice Chat do tường lửa. Bạn có thể sử dụng tính năng <strong>Chat tay</strong> trong bàn để trò chuyện thay thế.(Ở cổ nhuế thì dùng mọi thứ oke còn ở hải phòng t kbt)
             </div>
           </div>
 
@@ -88,7 +88,7 @@ export default function Lobby({
               CHẾ ĐỘ CHƠI
             </label>
             <div className="game-mode-selector" style={{ display: 'flex', gap: '10px' }}>
-              <div 
+              <div
                 className={`mode-option ${maxPlayers === 4 ? 'active' : ''}`}
                 onClick={() => setMaxPlayers(4)}
                 style={{
@@ -110,7 +110,7 @@ export default function Lobby({
               >
                 <div style={{ fontSize: '16px', fontWeight: 'bold' }}>👥 4 Người</div>
               </div>
-              <div 
+              <div
                 className={`mode-option ${maxPlayers === 5 ? 'active' : ''}`}
                 onClick={() => setMaxPlayers(5)}
                 style={{
@@ -216,7 +216,7 @@ export default function Lobby({
                   {p.isHost && <span className="badge-host-crown" title="Chủ phòng">👑</span>}
                   {p.isBot && <span className="badge-bot">BOT</span>}
                 </div>
-                
+
                 {isHost && !isSelf && (
                   <button className="btn-kick" onClick={() => onKickPlayer(p.id)}>
                     Kích
@@ -238,7 +238,7 @@ export default function Lobby({
               >
                 Bắt đầu chơi
               </button>
-              
+
               <button
                 className="btn-outline"
                 onClick={onAddBot}
